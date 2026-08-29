@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Default Supabase project configuration (can be overridden via localStorage or .env)
+// Default Supabase project configuration from your project
 const defaultUrl = import.meta.env.VITE_SUPABASE_URL || 'https://edqekrnxvuyhbfljdfpi.supabase.co';
-const defaultKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder';
+const defaultKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_emdqpx5eh15L9gOPVpdlIA_4vwwIkz1';
 
 const getStoredConfig = () => {
   try {
