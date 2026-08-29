@@ -1,38 +1,15 @@
-# Laravel / Backend
-backend/vendor/
-backend/node_modules/
-backend/public/storage
-backend/public/hot
-backend/storage/*.key
-backend/.env
-backend/.env.backup
-backend/.env.production
-backend/.phpunit.result.cache
-backend/Homestead.json
-backend/Homestead.yaml
-backend/auth.json
-backend/npm-debug.log
-backend/yarn-error.log
-backend/.fleet
-backend/.idea
-backend/.vscode
-backend/database/*.sqlite
-backend/database/*.sqlite-journal
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# React / Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/dist-ssr/
-frontend/*.local
-frontend/.env
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
-frontend/npm-debug.log*
-frontend/yarn-debug.log*
-frontend/yarn-error.log*
-
-# General / OS
 .DS_Store
 Thumbs.db
 .cache/

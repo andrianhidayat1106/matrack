@@ -1,8 +1,0 @@
-vendor
-node_modules
-.env
-.git
-.github
-tests
-storage/*.key
-database/*.sqlite

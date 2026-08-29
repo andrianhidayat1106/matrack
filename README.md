@@ -1,104 +1,64 @@
 # 🚀 Matrack - Personal Daily Productivity App
 
-**Matrack** adalah aplikasi produktivitas harian pribadi dengan antarmuka modern terinspirasi dari gaya **Odoo App Switcher** (App Launcher Grid) sebagai navigasi utama, memadukan fitur **Apple Notes** dan **Trello Schedule** dalam satu platform terpadu.
+**Matrack** adalah aplikasi produktivitas harian pribadi dengan antarmuka modern terinspirasi dari gaya **Odoo App Switcher** (App Launcher Grid) sebagai navigasi utama, memadukan fitur **Apple Notes** dan **Trello Schedule Kanban** yang terhubung langsung ke **Supabase** Cloud Database (Serverless Architecture).
 
 ---
 
 ## 🛠 Tech Stack & Architecture
 
-- **Backend:** Laravel 11 (Stateless RESTful API + Laravel Sanctum)
-- **Frontend:** React (Vite / Next.js) + Tailwind CSS + Lucide Icons
-- **Database:** Supabase (PostgreSQL)
-- **Authentication:** Token-based Auth (Login/Register tanpa role/RBAC)
+- **Frontend:** React (Vite) + Tailwind CSS + Lucide Icons + `@hello-pangea/dnd`
+- **Database & Auth:** Supabase Cloud (PostgreSQL + Realtime Client SDK)
+- **Deployment:** Vercel (1-Click Deployment)
+- **Architecture:** Pure Serverless / Direct Supabase SDK Client
 
 ---
 
 ## 🎨 Navigation & UI Specifications
 
 ### 1. 🎛️ Main Dashboard: Odoo-Style App Switcher / Launcher (Default View)
-- **Tampilan Utama (Default):** Saat user login, antarmuka default berupa **App Launcher / Icon Grid (Gaya Odoo)** berlayar penuh / berlatar elegan (dark/clean theme).
+- **Tampilan Utama (Default):** Antarmuka default berupa **App Launcher / Icon Grid (Gaya Odoo)** berlayar penuh dengan live digital clock, greeting, pencarian aplikasi, dan ringkasan produktivitas.
 - **Elemen Grid Menu:**
   - 📝 **Notes:** Membuka modul Apple-style Notes.
   - 📅 **Schedule:** Membuka modul Trello-style Kanban Board.
-  - ⚙️ **Settings / Account:** Pengaturan akun sederhana.
+  - ⚙️ **Settings:** Pengaturan akun & konfigurasi Supabase.
 - **Navigasi Atas (Top Header Bar):**
-  - Terdapat tombol **App Grid / Menu Icon** di pojok kiri atas saat membuka modul (Notes/Schedule) untuk kembali ke *Main App Launcher* Odoo tanpa gangguan sidebar permanen.
-  - Status User / Logout di pojok kanan atas.
+  - Terdapat tombol **App Grid / Menu Icon (9-dots)** di pojok kiri atas saat membuka modul untuk kembali ke *Main App Launcher* Odoo tanpa gangguan sidebar permanen.
+  - Status User & Dropdown di pojok kanan atas.
 
-### 2. 🔐 Authentication & Security
-- Register (Name, Email, Password) & Login.
-- Authentication menggunakan Token (Laravel Sanctum).
-- Isolasi Data: Setiap user hanya dapat melihat dan mengelola data miliknya sendiri.
-
-### 3. 📝 Notes Module (Apple Notes Style)
-- **UI/UX:** Desain *multi-column* terinspirasi dari **Apple Notes (macOS / iOS)**.
+### 2. 📝 Notes Module (Apple Notes Style)
+- **UI/UX:** Desain *3-column* terinspirasi dari **Apple Notes (macOS / iOS)**.
   - **Sidebar Internal Modul:** Folder/kategori & filter (All Notes, Pinned, Trash).
   - **Middle Pane:** Daftar catatan dengan pencarian cepat (*live search*), tanggal edit, dan *snippet text*.
-  - **Main Content Area:** Editor teks minimalis dengan dukungan Rich Text / Markdown.
-- **Fitur Utama:**
-  - Auto-save draf saat mengetik.
-  - Pin/Unpin catatan ke bagian paling atas.
-  - Cari catatan berdasarkan judul atau isi teks.
-  - Arsip / Sampah (*Trash*).
+  - **Main Content Area:** Editor teks minimalis dengan dukungan Rich Text / Markdown toolbar, hitung kata, dan auto-save instan.
 
-### 4. 📅 Schedule & Task Module (Trello / Kanban Style)
+### 3. 📅 Schedule & Task Module (Trello / Kanban Style)
 - **UI/UX:** Tampilan papan kanban (*Kanban Board*) interaktif mirip **Trello** dengan fitur *Drag-and-Drop*.
 - **Fitur Utama:**
-  - Kolom status kustom (misal: *To Do*, *In Progress*, *Done*).
-  - Kartu tugas dengan Judul, Deskripsi, Tanggal Jatuh Tempo (*Due Date*), dan Label Prioritas.
-  - Filter tugas berdasarkan tenggat waktu (*Today*, *Upcoming*, *Overdue*).
-  - Pemindahan kartu antar kolom dengan lancar.
+  - Kolom status kustom (*To Do*, *In Progress*, *Done*, atau tambah kolom baru).
+  - Kartu tugas dengan Judul, Deskripsi, Tanggal Jatuh Tempo (*Due Date*), dan Label Prioritas (High, Medium, Low).
+  - Filter tugas berdasarkan tenggat waktu (*Today*, *Upcoming*, *Overdue*) dan prioritas.
+  - Drag & Drop pemindahan kartu antar kolom dengan lancar.
 
 ---
 
-## 🗄 Database Schema (Supabase / PostgreSQL)
+## 🚀 Menjalankan di Lokal
 
-Aplikasi ini menggunakan struktur tabel berikut:
+1. **Install Dependensi:**
+   ```bash
+   npm install
+   ```
 
-1. **`users`**
-   - `id`, `name`, `email`, `password`, `created_at`, `updated_at`
-2. **`notes`**
-   - `id`, `user_id` (FK), `title`, `content`, `is_pinned` (boolean), `is_archived` (boolean), `timestamps`
-3. **`boards`**
-   - `id`, `user_id` (FK), `name`, `timestamps`
-4. **`columns`**
-   - `id`, `board_id` (FK), `name`, `position` (integer), `timestamps`
-5. **`tasks`**
-   - `id`, `column_id` (FK), `user_id` (FK), `title`, `description`, `due_date` (dateTime), `priority` (enum: low, medium, high), `position` (integer), `timestamps`
+2. **Jalankan Dev Server:**
+   ```bash
+   npm run dev
+   ```
+   Buka `http://localhost:5173`.
 
 ---
 
-## 🚀 Prompt / Instructions for Antigravity AI
+## 🌐 Deploy ke Vercel (Gratis & 1-Klik)
 
-> Copy and paste the prompt below into **Antigravity** to execute code generation:
-
-```text
-Project Name: Matrack
-Role: Full-Stack Developer AI Agent
-
-Please build the "Matrack" application based on the requirements stated in this README file.
-
-### Key Layout Instruction (Odoo-Style Navigation):
-- Do NOT use a permanent left sidebar for main app navigation.
-- Implement an **Odoo-Style App Switcher / Grid View** as the default main screen upon login.
-- Users click an app tile (e.g. Notes, Schedule) from the grid to open that specific module.
-- Inside any module, place an App Grid icon button on the top-left navigation bar so the user can easily return to the Odoo Home App Launcher.
-
-### Required Code Tasks:
-1. **Laravel 11 Backend API:**
-   - Setup Laravel 11 with PostgreSQL connection configured for Supabase.
-   - Install and configure Laravel Sanctum for API token authentication.
-   - Create Database Migrations, Models, Controllers, and Resource Routers for:
-     - Auth (`/api/register`, `/api/login`, `/api/logout`, `/api/me`)
-     - Notes CRUD (`/api/notes`, `/api/notes/{id}/pin`, etc.)
-     - Board/Schedule CRUD (`/api/boards`, `/api/columns`, `/api/tasks`)
-   - Ensure all queries scope data strictly to `auth()->user()->id`.
-
-2. **React Frontend (Vite + Tailwind CSS):**
-   - **Odoo Dashboard Component:** Build a clean App Grid menu component displaying colorful app icons (Notes, Schedule, Settings).
-   - **Notes Component:** Apple Notes layout (Internal sidebar, note list, rich text area) with live search and pin action.
-   - **Schedule Component:** Trello-like Kanban board with date pickers, priority tags, and drag-and-drop support.
-   - Integrate API calls using Axios/Fetch with Authorization header tokens.
-
-3. **Supabase Setup Guidance:**
-   - Provide clear instructions for `.env` credentials mapping (DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD).
+1. Buka [vercel.com](https://vercel.com) dan login dengan akun GitHub Anda.
+2. Klik **"Add New..."** ➡️ **"Project"** ➡️ pilih repo **`matrack`**.
+3. Klik **"Deploy"** (Root directory langsung root project).
+4. Selesai! Aplikasi Anda langsung live di internet.
