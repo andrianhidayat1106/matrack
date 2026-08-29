@@ -109,54 +109,54 @@ export const TrelloKanban = () => {
       return;
     }
 
-    const sourceColId = source.droppableId;
-    const destColId = destination.droppableId;
-
-    // Find source and dest columns across all boards
-    const newBoards = boards.map((board) => ({
-      ...board,
-      columns: (board.columns || []).map((col) => ({
-        ...col,
-        tasks: [...(col.tasks || [])],
-      })),
-    }));
+    const sourceColId = String(source.droppableId);
+    const destColId = String(destination.droppableId);
+    const taskId = String(draggableId);
 
     let movedTask = null;
 
-    // Remove from source
-    for (const b of newBoards) {
-      for (const col of b.columns) {
-        if (String(col.id) === String(sourceColId)) {
-          const [removed] = col.tasks.splice(source.index, 1);
-          movedTask = removed;
-          break;
+    // 1. Remove from source column
+    const step1Boards = boards.map((b) => ({
+      ...b,
+      columns: (b.columns || []).map((col) => {
+        if (String(col.id) === sourceColId) {
+          const remaining = (col.tasks || []).filter((t) => {
+            if (String(t.id) === taskId) {
+              movedTask = { ...t, column_id: destColId };
+              return false;
+            }
+            return true;
+          });
+          return { ...col, tasks: remaining };
         }
-      }
-      if (movedTask) break;
-    }
+        return col;
+      }),
+    }));
 
     if (!movedTask) return;
 
-    // Add to destination
-    movedTask.column_id = destColId;
-    for (const b of newBoards) {
-      for (const col of b.columns) {
-        if (String(col.id) === String(destColId)) {
-          col.tasks.splice(destination.index, 0, movedTask);
-          break;
+    // 2. Add to destination column at exact destination index
+    const finalBoards = step1Boards.map((b) => ({
+      ...b,
+      columns: (b.columns || []).map((col) => {
+        if (String(col.id) === destColId) {
+          const list = [...(col.tasks || [])];
+          list.splice(destination.index, 0, movedTask);
+          return { ...col, tasks: list };
         }
-      }
-    }
+        return col;
+      }),
+    }));
 
-    setBoards(newBoards);
+    // 3. Immediately render updated state
+    setBoards(finalBoards);
 
-    // Persist move
+    // 4. Persist to storage & database
     try {
-      await moveTask(movedTask.id, destColId, destination.index);
+      await moveTask(taskId, destColId, destination.index);
       refreshUserStats(user?.id);
     } catch (err) {
-      console.error('Failed to move task', err);
-      fetchBoardData();
+      console.error('Failed to persist move task', err);
     }
   };
 

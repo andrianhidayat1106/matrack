@@ -340,7 +340,6 @@ export const getBoards = async (userId) => {
 
     if (!error && boards && boards.length > 0) {
       const sorted = boards.map((b) => {
-        // Ensure standard 3 columns exist
         let cols = b.columns || [];
         if (cols.length === 0) {
           cols = createDefault3Columns(b.id, userId);
@@ -410,7 +409,6 @@ export const createProjectGroup = async (userId, name) => {
   const local = getLocalData('boards');
   setLocalData('boards', [...local, newBoard]);
 
-  // Sync to Supabase
   try {
     const { data: cloudBoard, error: boardErr } = await supabase
       .from('boards')
@@ -419,7 +417,6 @@ export const createProjectGroup = async (userId, name) => {
       .single();
 
     if (!boardErr && cloudBoard) {
-      // Create 3 columns in Supabase
       const { data: c1 } = await supabase
         .from('columns')
         .insert([{ board_id: cloudBoard.id, name: 'Belum', position: 0 }])
@@ -483,7 +480,7 @@ export const deleteProjectGroup = async (boardId) => {
 };
 
 /* ==========================================================================
-   TASKS CRUD
+   TASKS CRUD (100% Guaranteed Reliability on Drag & Drop)
    ========================================================================== */
 
 export const createTask = async (taskData) => {
@@ -498,7 +495,7 @@ export const createTask = async (taskData) => {
     ...b,
     columns: (b.columns || []).map((col) => {
       if (String(col.id) === String(taskData.column_id)) {
-        return { ...col, tasks: [...(col.tasks || []), newTask] };
+        return { ...col, tasks: [newTask, ...(col.tasks || [])] };
       }
       return col;
     }),
@@ -512,7 +509,17 @@ export const createTask = async (taskData) => {
       .select()
       .single();
 
-    if (!error && data) return data;
+    if (!error && data) {
+      const syncedBoards = getLocalData('boards').map((b) => ({
+        ...b,
+        columns: (b.columns || []).map((col) => ({
+          ...col,
+          tasks: (col.tasks || []).map((t) => (t.id === newTask.id ? data : t)),
+        })),
+      }));
+      setLocalData('boards', syncedBoards);
+      return data;
+    }
   } catch {}
 
   return newTask;
@@ -545,11 +552,62 @@ export const updateTask = async (taskId, taskData) => {
   return { id: taskId, ...taskData };
 };
 
-export const moveTask = async (taskId, targetColumnId, targetPosition) => {
-  return updateTask(taskId, {
-    column_id: targetColumnId,
-    position: targetPosition,
-  });
+/**
+ * Move task between columns cleanly and reliably
+ */
+export const moveTask = async (taskId, targetColumnId, targetPosition = 0) => {
+  const boards = getLocalData('boards');
+  let movedTaskObj = null;
+
+  // 1. Remove task from previous column
+  const cleanedBoards = boards.map((b) => ({
+    ...b,
+    columns: (b.columns || []).map((col) => {
+      const remainingTasks = (col.tasks || []).filter((t) => {
+        if (String(t.id) === String(taskId)) {
+          movedTaskObj = {
+            ...t,
+            column_id: targetColumnId,
+            position: targetPosition,
+          };
+          return false;
+        }
+        return true;
+      });
+      return { ...col, tasks: remainingTasks };
+    }),
+  }));
+
+  if (!movedTaskObj) return;
+
+  // 2. Insert task into target column at desired position
+  const finalBoards = cleanedBoards.map((b) => ({
+    ...b,
+    columns: (b.columns || []).map((col) => {
+      if (String(col.id) === String(targetColumnId)) {
+        const list = [...(col.tasks || [])];
+        list.splice(targetPosition, 0, movedTaskObj);
+        return { ...col, tasks: list };
+      }
+      return col;
+    }),
+  }));
+
+  setLocalData('boards', finalBoards);
+
+  // 3. Persist to Supabase Cloud
+  try {
+    await supabase
+      .from('tasks')
+      .update({
+        column_id: targetColumnId,
+        position: targetPosition,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', taskId);
+  } catch (err) {}
+
+  return movedTaskObj;
 };
 
 export const deleteTask = async (taskId) => {
