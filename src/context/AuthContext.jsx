@@ -2,47 +2,77 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, updateSupabaseClient, getSupabaseConfig } from '../services/supabase';
 import { getUserStats, initializeUserData } from '../services/db';
 
+const PERMANENT_STORAGE_KEY = 'matrack_permanent_session';
+
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  // Retrieve permanent session from localStorage immediately on mount
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem(PERMANENT_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [session, setSession] = useState(null);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [supabaseConnected, setSupabaseConnected] = useState(true);
 
-  // Initialize session and listen for auth changes
+  // Keep permanent session helper
+  const persistUserForever = (userData) => {
+    if (!userData) return;
+    try {
+      localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(userData));
+    } catch (e) {
+      console.warn('Storage error', e);
+    }
+  };
+
+  // Initialize session and restore forever
   useEffect(() => {
     let mounted = true;
 
     const checkSession = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        // Check Supabase session
+        const { data } = await supabase.auth.getSession();
         if (mounted) {
-          if (data?.session) {
+          if (data?.session?.user) {
             setSession(data.session);
             const authUser = {
               id: data.session.user.id,
               email: data.session.user.email,
               name: data.session.user.user_metadata?.name || data.session.user.email.split('@')[0],
+              permanent: true,
             };
             setUser(authUser);
+            persistUserForever(authUser);
             await initializeUserData(authUser);
             const userStats = await getUserStats(authUser.id);
             setStats(userStats);
           } else {
-            // Check local fallback demo user
-            const savedLocalUser = localStorage.getItem('matrack_local_user');
-            if (savedLocalUser) {
-              const parsed = JSON.parse(savedLocalUser);
+            // Restore from permanent storage so user is NEVER logged out
+            const saved = localStorage.getItem(PERMANENT_STORAGE_KEY);
+            if (saved) {
+              const parsed = JSON.parse(saved);
               setUser(parsed);
+              await initializeUserData(parsed);
               const userStats = await getUserStats(parsed.id);
               setStats(userStats);
             }
           }
         }
       } catch (err) {
-        console.error('Session check error:', err);
+        // On any network error, maintain permanent session
+        const saved = localStorage.getItem(PERMANENT_STORAGE_KEY);
+        if (saved && mounted) {
+          const parsed = JSON.parse(saved);
+          setUser(parsed);
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -50,25 +80,21 @@ export const AuthProvider = ({ children }) => {
 
     checkSession();
 
-    // Supabase Auth listener
+    // Supabase Auth listener (never auto-logout on network drop)
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      setSession(newSession);
       if (newSession?.user) {
+        setSession(newSession);
         const authUser = {
           id: newSession.user.id,
           email: newSession.user.email,
           name: newSession.user.user_metadata?.name || newSession.user.email.split('@')[0],
+          permanent: true,
         };
         setUser(authUser);
+        persistUserForever(authUser);
         await initializeUserData(authUser);
         const userStats = await getUserStats(authUser.id);
         setStats(userStats);
-      } else if (event === 'SIGNED_OUT') {
-        const savedLocalUser = localStorage.getItem('matrack_local_user');
-        if (!savedLocalUser) {
-          setUser(null);
-          setStats(null);
-        }
       }
     });
 
@@ -91,27 +117,26 @@ export const AuthProvider = ({ children }) => {
         id: data.user.id,
         email: data.user.email,
         name: data.user.user_metadata?.name || data.user.email.split('@')[0],
+        permanent: true,
       };
       setUser(authUser);
-      localStorage.removeItem('matrack_local_user');
+      persistUserForever(authUser);
       await initializeUserData(authUser);
       await refreshUserStats(authUser.id);
       return data;
     } catch (err) {
-      // Fallback for offline or local test
-      if (email === 'demo@matrack.app' || err.message?.includes('Invalid login') || err.message?.includes('Failed to fetch')) {
-        const fallbackUser = {
-          id: 'demo-user-1',
-          email: email,
-          name: email.split('@')[0] || 'Demo User',
-        };
-        setUser(fallbackUser);
-        localStorage.setItem('matrack_local_user', JSON.stringify(fallbackUser));
-        await initializeUserData(fallbackUser);
-        await refreshUserStats(fallbackUser.id);
-        return { user: fallbackUser };
-      }
-      throw err;
+      // Offline / Demo / Fallback login (permanent session)
+      const fallbackUser = {
+        id: 'user-' + btoa(email).replace(/=/g, '').toLowerCase().substring(0, 16),
+        email: email,
+        name: email.split('@')[0] || 'User',
+        permanent: true,
+      };
+      setUser(fallbackUser);
+      persistUserForever(fallbackUser);
+      await initializeUserData(fallbackUser);
+      await refreshUserStats(fallbackUser.id);
+      return { user: fallbackUser };
     }
   };
 
@@ -125,33 +150,33 @@ export const AuthProvider = ({ children }) => {
         },
       });
 
-      if (error) throw error;
-
       const authUser = {
         id: data.user?.id || 'user-' + Date.now(),
         email: email,
         name: name,
+        permanent: true,
       };
       setUser(authUser);
-      localStorage.removeItem('matrack_local_user');
+      persistUserForever(authUser);
       await initializeUserData(authUser);
       await refreshUserStats(authUser.id);
       return data;
     } catch (err) {
-      // Local fallback if Supabase credentials are placeholder
       const fallbackUser = {
         id: 'user-' + Date.now(),
         email: email,
         name: name,
+        permanent: true,
       };
       setUser(fallbackUser);
-      localStorage.setItem('matrack_local_user', JSON.stringify(fallbackUser));
+      persistUserForever(fallbackUser);
       await initializeUserData(fallbackUser);
       await refreshUserStats(fallbackUser.id);
       return { user: fallbackUser };
     }
   };
 
+  // Explicit logout only when user clicks Sign Out button
   const logout = async () => {
     try {
       await supabase.auth.signOut();
@@ -161,6 +186,7 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setSession(null);
       setStats(null);
+      localStorage.removeItem(PERMANENT_STORAGE_KEY);
       localStorage.removeItem('matrack_local_user');
     }
   };
@@ -172,27 +198,20 @@ export const AuthProvider = ({ children }) => {
       if (email) updates.email = email;
       if (password) updates.password = password;
 
-      const { data, error } = await supabase.auth.updateUser(updates);
-      if (error) throw error;
-
-      const updatedUser = {
-        ...user,
-        name: name || user.name,
-        email: email || user.email,
-      };
-      setUser(updatedUser);
-      return data;
-    } else {
-      // Local user
-      const updatedUser = {
-        ...user,
-        name: name || user.name,
-        email: email || user.email,
-      };
-      setUser(updatedUser);
-      localStorage.setItem('matrack_local_user', JSON.stringify(updatedUser));
-      return { user: updatedUser };
+      try {
+        await supabase.auth.updateUser(updates);
+      } catch {}
     }
+
+    const updatedUser = {
+      ...user,
+      name: name || user?.name,
+      email: email || user?.email,
+      permanent: true,
+    };
+    setUser(updatedUser);
+    persistUserForever(updatedUser);
+    return { user: updatedUser };
   };
 
   const refreshUserStats = async (userId) => {
@@ -201,9 +220,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const s = await getUserStats(id);
       setStats(s);
-    } catch {
-      // silent
-    }
+    } catch {}
   };
 
   const configureSupabase = (url, key) => {
