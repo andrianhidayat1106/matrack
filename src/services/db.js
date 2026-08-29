@@ -19,6 +19,35 @@ const setLocalData = (key, val) => {
 };
 
 /**
+ * Helper to ensure standard 3 columns (Belum, Masih Dilakukan, Selesai)
+ */
+export const createDefault3Columns = (boardId, userId) => {
+  return [
+    {
+      id: 'col-belum-' + boardId,
+      board_id: boardId,
+      name: 'Belum',
+      position: 0,
+      tasks: [],
+    },
+    {
+      id: 'col-progress-' + boardId,
+      board_id: boardId,
+      name: 'Masih Dilakukan',
+      position: 1,
+      tasks: [],
+    },
+    {
+      id: 'col-selesai-' + boardId,
+      board_id: boardId,
+      name: 'Selesai',
+      position: 2,
+      tasks: [],
+    },
+  ];
+};
+
+/**
  * Initialize starter data for new users
  */
 export const initializeUserData = async (user) => {
@@ -27,23 +56,25 @@ export const initializeUserData = async (user) => {
   // Initialize local fallback boards if empty
   const localBoards = getLocalData('boards');
   if (localBoards.length === 0) {
+    const defaultBoardId = 'board-' + Date.now();
     const defaultBoard = {
-      id: 'board-' + Date.now(),
+      id: defaultBoardId,
       user_id: user.id,
-      name: 'My Schedule Board',
+      name: 'Jadwal Utama',
       created_at: new Date().toISOString(),
       columns: [
         {
-          id: 'col-1',
-          name: 'To Do',
+          id: 'col-belum-' + defaultBoardId,
+          board_id: defaultBoardId,
+          name: 'Belum',
           position: 0,
           tasks: [
             {
               id: 'task-1',
-              column_id: 'col-1',
+              column_id: 'col-belum-' + defaultBoardId,
               user_id: user.id,
-              title: 'Welcome to Matrack Schedule! 📅',
-              description: 'Explore the Trello-style kanban board. You can drag cards between columns, set priorities, and track due dates.',
+              title: 'Jelajahi Fitur Matrack Schedule 📅',
+              description: 'Tiap grup memiliki 3 kolom otomatis (Belum, Masih Dilakukan, Selesai). Anda bisa drag & drop antar kolom.',
               priority: 'high',
               due_date: new Date(Date.now() + 86400000 * 2).toISOString(),
               position: 0,
@@ -51,16 +82,17 @@ export const initializeUserData = async (user) => {
           ],
         },
         {
-          id: 'col-2',
-          name: 'In Progress',
+          id: 'col-progress-' + defaultBoardId,
+          board_id: defaultBoardId,
+          name: 'Masih Dilakukan',
           position: 1,
           tasks: [
             {
               id: 'task-2',
-              column_id: 'col-2',
+              column_id: 'col-progress-' + defaultBoardId,
               user_id: user.id,
-              title: 'Setup personal workspace',
-              description: 'Customize folders in Apple Notes and add your upcoming sprint goals.',
+              title: 'Sesuaikan Target & Catatan Harian',
+              description: 'Buat catatan baru di Apple Notes dan atur daftar tugas di sini.',
               priority: 'medium',
               due_date: new Date(Date.now() + 86400000 * 5).toISOString(),
               position: 0,
@@ -68,16 +100,17 @@ export const initializeUserData = async (user) => {
           ],
         },
         {
-          id: 'col-3',
-          name: 'Done',
+          id: 'col-selesai-' + defaultBoardId,
+          board_id: defaultBoardId,
+          name: 'Selesai',
           position: 2,
           tasks: [
             {
               id: 'task-3',
-              column_id: 'col-3',
+              column_id: 'col-selesai-' + defaultBoardId,
               user_id: user.id,
-              title: 'Account connected to Supabase',
-              description: 'Successfully initialized client with Supabase cloud database.',
+              title: 'Akun Matrack Siap Digunakan',
+              description: 'Berhasil terhubung ke Supabase Cloud.',
               priority: 'low',
               due_date: new Date().toISOString(),
               position: 0,
@@ -95,8 +128,8 @@ export const initializeUserData = async (user) => {
     const defaultNote = {
       id: 'note-' + Date.now(),
       user_id: user.id,
-      title: 'Welcome to Matrack Notes 📝',
-      content: "# Welcome to Matrack Notes!\n\nThis is your minimalist, Apple Notes-inspired workspace.\n\n### Key Features:\n- **Direct Supabase Integration:** Fast, realtime cloud sync.\n- **Instant Auto-save:** Write freely without worrying about saving.\n- **Pin Important Notes:** Keep critical thoughts pinned to the top.\n- **Odoo Launcher:** Click the 9-dots icon at top-left anytime to switch apps!\n\nHave a productive day!",
+      title: 'Selamat Datang di Matrack Notes 📝',
+      content: "# Selamat Datang di Matrack Notes!\n\nRuang kerja catatan pribadi bergaya Apple Notes dengan auto-save instan dan sinkronisasi realtime.\n\n### Fitur Utama:\n- **Auto-save Instan:** Ketik dengan bebas tanpa takut hilang.\n- **Pin Catatan Penting:** Sematkan ide utama di bagian teratas.\n- **Odoo Launcher:** Klik ikon 9-titik di pojok kiri atas kapan saja untuk berpindah aplikasi!\n\nSemoga hari Anda produktif!",
       folder: 'Notes',
       is_pinned: true,
       is_archived: false,
@@ -106,31 +139,6 @@ export const initializeUserData = async (user) => {
     };
     setLocalData('notes', [defaultNote]);
   }
-
-  // Try initializing Supabase Cloud in background
-  try {
-    const { data: existing } = await supabase
-      .from('notes')
-      .select('id')
-      .eq('user_id', String(user.id))
-      .limit(1);
-
-    if (!existing || existing.length === 0) {
-      await supabase.from('notes').insert([
-        {
-          user_id: String(user.id),
-          title: 'Welcome to Matrack Notes 📝',
-          content: "# Welcome to Matrack Notes!\n\nThis is your minimalist, Apple Notes-inspired workspace.\n\n### Key Features:\n- **Direct Supabase Integration:** Fast, realtime cloud sync.\n- **Instant Auto-save:** Write freely without worrying about saving.\n- **Pin Important Notes:** Keep critical thoughts pinned to the top.\n- **Odoo Launcher:** Click the 9-dots icon at top-left anytime to switch apps!\n\nHave a productive day!",
-          folder: 'Notes',
-          is_pinned: true,
-          is_archived: false,
-          is_trash: false,
-        },
-      ]);
-    }
-  } catch (e) {
-    // Silent cloud error
-  }
 };
 
 /* ==========================================================================
@@ -139,7 +147,6 @@ export const initializeUserData = async (user) => {
 
 export const getNotes = async (userId, { filter = 'all', folder = 'all', search = '' } = {}) => {
   let notes = [];
-  let folders = ['Notes'];
 
   try {
     let query = supabase
@@ -174,7 +181,6 @@ export const getNotes = async (userId, { filter = 'all', folder = 'all', search 
       throw error;
     }
   } catch (err) {
-    // Fallback to local storage
     const all = getLocalData('notes');
     notes = all.filter((n) => String(n.user_id) === String(userId));
 
@@ -221,11 +227,9 @@ export const createNote = async (userId, noteData) => {
     updated_at: new Date().toISOString(),
   };
 
-  // Save to local storage first (instant responsiveness)
   const local = getLocalData('notes');
   setLocalData('notes', [newNote, ...local]);
 
-  // Sync to Supabase
   try {
     const { data, error } = await supabase
       .from('notes')
@@ -244,16 +248,13 @@ export const createNote = async (userId, noteData) => {
       .single();
 
     if (!error && data) {
-      // Replace local placeholder id with Supabase id
       const updatedLocal = getLocalData('notes').map((n) =>
         n.id === newNote.id ? data : n
       );
       setLocalData('notes', updatedLocal);
       return data;
     }
-  } catch (err) {
-    console.warn('Supabase sync error (using local storage):', err);
-  }
+  } catch (err) {}
 
   return newNote;
 };
@@ -276,9 +277,7 @@ export const updateNote = async (noteId, noteData) => {
       .single();
 
     if (!error && data) return data;
-  } catch (err) {
-    // ignore
-  }
+  } catch (err) {}
 
   return updatedLocal.find((n) => String(n.id) === String(noteId));
 };
@@ -322,7 +321,7 @@ export const restoreNote = async (noteId) => {
 };
 
 /* ==========================================================================
-   KANBAN BOARDS & TASKS CRUD (Trello Schedule Module)
+   SCHEDULE ROWS / PROJECT GROUPS (1 Row = 3 Columns: Belum, Masih Dilakukan, Selesai)
    ========================================================================== */
 
 export const getBoards = async (userId) => {
@@ -340,89 +339,152 @@ export const getBoards = async (userId) => {
       .order('created_at', { ascending: true });
 
     if (!error && boards && boards.length > 0) {
-      const sorted = boards.map((b) => ({
-        ...b,
-        columns: (b.columns || [])
-          .sort((a, b) => (a.position || 0) - (b.position || 0))
-          .map((col) => ({
-            ...col,
-            tasks: (col.tasks || []).sort(
-              (a, b) => (a.position || 0) - (b.position || 0)
-            ),
-          })),
-      }));
+      const sorted = boards.map((b) => {
+        // Ensure standard 3 columns exist
+        let cols = b.columns || [];
+        if (cols.length === 0) {
+          cols = createDefault3Columns(b.id, userId);
+        }
+        return {
+          ...b,
+          columns: cols
+            .sort((a, b) => (a.position || 0) - (b.position || 0))
+            .map((col) => ({
+              ...col,
+              tasks: (col.tasks || []).sort(
+                (a, b) => (a.position || 0) - (b.position || 0)
+              ),
+            })),
+        };
+      });
       setLocalData('boards', sorted);
       return sorted;
     }
-  } catch (err) {
-    // fallback
-  }
+  } catch (err) {}
 
-  return getLocalData('boards');
+  const local = getLocalData('boards');
+  if (local.length === 0) {
+    await initializeUserData({ id: userId });
+    return getLocalData('boards');
+  }
+  return local;
 };
 
-export const createColumn = async (boardId, name, position) => {
-  const newCol = {
-    id: 'col-' + Date.now(),
-    board_id: boardId,
-    name,
-    position,
-    tasks: [],
+/**
+ * Create a new Project Group Row (Automatically creates 3 columns: Belum, Masih Dilakukan, Selesai)
+ */
+export const createProjectGroup = async (userId, name) => {
+  const newBoardId = 'board-' + Date.now();
+  const defaultCols = [
+    {
+      id: 'col-belum-' + newBoardId,
+      board_id: newBoardId,
+      name: 'Belum',
+      position: 0,
+      tasks: [],
+    },
+    {
+      id: 'col-progress-' + newBoardId,
+      board_id: newBoardId,
+      name: 'Masih Dilakukan',
+      position: 1,
+      tasks: [],
+    },
+    {
+      id: 'col-selesai-' + newBoardId,
+      board_id: newBoardId,
+      name: 'Selesai',
+      position: 2,
+      tasks: [],
+    },
+  ];
+
+  const newBoard = {
+    id: newBoardId,
+    user_id: String(userId),
+    name: name || 'Proyek / Baris Baru',
+    created_at: new Date().toISOString(),
+    columns: defaultCols,
   };
 
-  const boards = getLocalData('boards');
-  const updatedBoards = boards.map((b) => {
-    if (String(b.id) === String(boardId)) {
-      return { ...b, columns: [...(b.columns || []), newCol] };
-    }
-    return b;
-  });
-  setLocalData('boards', updatedBoards);
+  const local = getLocalData('boards');
+  setLocalData('boards', [...local, newBoard]);
 
+  // Sync to Supabase
   try {
-    const { data, error } = await supabase
-      .from('columns')
-      .insert([{ board_id: boardId, name, position }])
-      .select('*, tasks(*)')
+    const { data: cloudBoard, error: boardErr } = await supabase
+      .from('boards')
+      .insert([{ user_id: String(userId), name: newBoard.name }])
+      .select()
       .single();
 
-    if (!error && data) return { ...data, tasks: [] };
-  } catch {}
+    if (!boardErr && cloudBoard) {
+      // Create 3 columns in Supabase
+      const { data: c1 } = await supabase
+        .from('columns')
+        .insert([{ board_id: cloudBoard.id, name: 'Belum', position: 0 }])
+        .select()
+        .single();
+      const { data: c2 } = await supabase
+        .from('columns')
+        .insert([{ board_id: cloudBoard.id, name: 'Masih Dilakukan', position: 1 }])
+        .select()
+        .single();
+      const { data: c3 } = await supabase
+        .from('columns')
+        .insert([{ board_id: cloudBoard.id, name: 'Selesai', position: 2 }])
+        .select()
+        .single();
 
-  return newCol;
+      const syncedBoard = {
+        ...cloudBoard,
+        columns: [
+          { ...(c1 || defaultCols[0]), tasks: [] },
+          { ...(c2 || defaultCols[1]), tasks: [] },
+          { ...(c3 || defaultCols[2]), tasks: [] },
+        ],
+      };
+
+      const updated = getLocalData('boards').map((b) =>
+        b.id === newBoardId ? syncedBoard : b
+      );
+      setLocalData('boards', updated);
+      return syncedBoard;
+    }
+  } catch (err) {}
+
+  return newBoard;
 };
 
-export const updateColumn = async (columnId, name) => {
-  const boards = getLocalData('boards');
-  const updated = boards.map((b) => ({
-    ...b,
-    columns: (b.columns || []).map((c) =>
-      String(c.id) === String(columnId) ? { ...c, name } : c
-    ),
-  }));
+export const updateProjectGroup = async (boardId, name) => {
+  const local = getLocalData('boards');
+  const updated = local.map((b) =>
+    String(b.id) === String(boardId) ? { ...b, name } : b
+  );
   setLocalData('boards', updated);
 
   try {
-    await supabase.from('columns').update({ name }).eq('id', columnId);
+    await supabase.from('boards').update({ name }).eq('id', boardId);
   } catch {}
 
   return true;
 };
 
-export const deleteColumn = async (columnId) => {
-  const boards = getLocalData('boards');
-  const updated = boards.map((b) => ({
-    ...b,
-    columns: (b.columns || []).filter((c) => String(c.id) !== String(columnId)),
-  }));
+export const deleteProjectGroup = async (boardId) => {
+  const local = getLocalData('boards');
+  const updated = local.filter((b) => String(b.id) !== String(boardId));
   setLocalData('boards', updated);
 
   try {
-    await supabase.from('columns').delete().eq('id', columnId);
+    await supabase.from('boards').delete().eq('id', boardId);
   } catch {}
 
   return true;
 };
+
+/* ==========================================================================
+   TASKS CRUD
+   ========================================================================== */
 
 export const createTask = async (taskData) => {
   const newTask = {
@@ -519,9 +581,14 @@ export const getUserStats = async (userId) => {
   const pinned = notes.filter((n) => n.is_pinned);
   const boards = getLocalData('boards');
   let totalTasks = 0;
+  let completedTasks = 0;
+
   boards.forEach((b) => {
     (b.columns || []).forEach((c) => {
       totalTasks += (c.tasks || []).length;
+      if (c.name?.toLowerCase().includes('selesai') || c.name?.toLowerCase().includes('done')) {
+        completedTasks += (c.tasks || []).length;
+      }
     });
   });
 
@@ -529,7 +596,7 @@ export const getUserStats = async (userId) => {
     notes_count: notes.length,
     pinned_notes_count: pinned.length,
     tasks_total: totalTasks,
-    tasks_completed: 0,
-    tasks_pending: totalTasks,
+    tasks_completed: completedTasks,
+    tasks_pending: totalTasks - completedTasks,
   };
 };
