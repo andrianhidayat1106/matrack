@@ -12,6 +12,7 @@ import {
   Kanban
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { MatrackLogo } from '../common/MatrackLogo';
 
 export const AuthModal = () => {
   const { login, register, backendOnline } = useAuth();
@@ -77,15 +78,13 @@ export const AuthModal = () => {
 
       <div className="w-full max-w-md z-10 space-y-6">
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white shadow-xl shadow-blue-500/20 mb-2">
-            <LayoutGrid className="w-7 h-7" />
-          </div>
-          <h1 className="text-3xl font-black tracking-tight text-white">
+        <div className="text-center space-y-3 flex flex-col items-center">
+          <MatrackLogo size="xl" showText={false} />
+          <h1 className="text-3xl font-black tracking-wider bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
             MATRACK
           </h1>
-          <p className="text-xs text-slate-400">
-            Personal Daily Productivity Workspace • Odoo • Apple Notes • Trello Kanban
+          <p className="text-xs text-slate-400 max-w-xs">
+            Personal Daily Productivity Workspace • Odoo Launcher • Apple Notes • Trello Kanban
           </p>
         </div>
 

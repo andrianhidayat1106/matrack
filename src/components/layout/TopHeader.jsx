@@ -12,6 +12,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { MatrackLogo } from '../common/MatrackLogo';
 
 export const TopHeader = ({ currentView, onNavigate }) => {
   const { user, logout, stats, backendOnline } = useAuth();
@@ -66,9 +67,9 @@ export const TopHeader = ({ currentView, onNavigate }) => {
         <div className="flex items-center space-x-2">
           <button 
             onClick={() => onNavigate('odoo')}
-            className="font-bold text-sm tracking-wide bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+            className="hover:opacity-80 transition-opacity flex items-center"
           >
-            MATRACK
+            <MatrackLogo size="sm" showText={true} />
           </button>
           {currentView !== 'odoo' && (
             <>

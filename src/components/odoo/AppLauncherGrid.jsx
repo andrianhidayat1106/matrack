@@ -13,6 +13,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { MatrackLogo } from '../common/MatrackLogo';
 
 export const AppLauncherGrid = ({ onOpenApp }) => {
   const { user, stats } = useAuth();
@@ -95,16 +96,18 @@ export const AppLauncherGrid = ({ onOpenApp }) => {
       {/* Top Section: Greeting, Live Clock & App Search */}
       <div className="max-w-5xl mx-auto w-full space-y-8 z-10">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b border-white/10">
-          <div>
-            <div className="flex items-center space-x-2 text-indigo-400 text-xs font-semibold uppercase tracking-wider mb-1">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Matrack Workspace</span>
+          <div className="space-y-2">
+            <div className="flex items-center space-x-3 mb-1">
+              <MatrackLogo size="sm" showText={true} />
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 font-semibold">
+                v2.0 Serverless
+              </span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
               {getGreeting()}, <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-amber-300 bg-clip-text text-transparent">{user?.name || 'User'}</span>
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Select an application module to begin your daily productivity session.
+              Pilih modul aplikasi produktivitas harian Anda di bawah ini.
             </p>
           </div>
 
