@@ -222,27 +222,49 @@ export const TrelloKanban = () => {
     if (!user) return;
     try {
       if (taskData.id) {
-        // Update
+        // Update existing task
         const updated = await updateTask(taskData.id, taskData);
-        setBoards((prev) =>
-          prev.map((b) => ({
+        
+        // Update local UI state
+        setBoards((prev) => {
+          let updatedTaskObj = null;
+
+          // 1. Remove old task instance
+          const stripped = prev.map((b) => ({
             ...b,
             columns: (b.columns || []).map((col) => {
-              if (String(col.id) === String(taskData.column_id)) {
+              const remaining = (col.tasks || []).filter((t) => {
+                if (String(t.id) === String(taskData.id)) {
+                  updatedTaskObj = { ...t, ...taskData, ...updated };
+                  return false;
+                }
+                return true;
+              });
+              return { ...col, tasks: remaining };
+            }),
+          }));
+
+          if (!updatedTaskObj) {
+            updatedTaskObj = { id: taskData.id, ...taskData, ...updated };
+          }
+
+          // 2. Insert into column
+          const destColId = String(taskData.column_id || updatedTaskObj.column_id);
+          return stripped.map((b) => ({
+            ...b,
+            columns: (b.columns || []).map((col) => {
+              if (String(col.id) === destColId) {
                 return {
                   ...col,
-                  tasks: col.tasks.map((t) => (t.id === taskData.id ? { ...t, ...updated } : t)),
+                  tasks: [updatedTaskObj, ...(col.tasks || [])],
                 };
               }
-              return {
-                ...col,
-                tasks: col.tasks.filter((t) => t.id !== taskData.id),
-              };
+              return col;
             }),
-          }))
-        );
+          }));
+        });
       } else {
-        // Create
+        // Create new task
         const targetCol = taskData.column_id || targetColumnForNewTask;
         const created = await createTask({
           ...taskData,

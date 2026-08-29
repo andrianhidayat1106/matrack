@@ -527,16 +527,40 @@ export const createTask = async (taskData) => {
 
 export const updateTask = async (taskId, taskData) => {
   const boards = getLocalData('boards');
-  const updated = boards.map((b) => ({
+  let targetTask = null;
+
+  // 1. Remove old task from its previous column
+  const cleaned = boards.map((b) => ({
     ...b,
-    columns: (b.columns || []).map((col) => ({
-      ...col,
-      tasks: (col.tasks || []).map((t) =>
-        String(t.id) === String(taskId) ? { ...t, ...taskData } : t
-      ),
-    })),
+    columns: (b.columns || []).map((col) => {
+      const remaining = (col.tasks || []).filter((t) => {
+        if (String(t.id) === String(taskId)) {
+          targetTask = { ...t, ...taskData };
+          return false;
+        }
+        return true;
+      });
+      return { ...col, tasks: remaining };
+    }),
   }));
-  setLocalData('boards', updated);
+
+  if (!targetTask) {
+    targetTask = { id: taskId, ...taskData };
+  }
+
+  // 2. Put the updated task in target column
+  const targetColId = String(taskData.column_id || targetTask.column_id);
+  const updatedBoards = cleaned.map((b) => ({
+    ...b,
+    columns: (b.columns || []).map((col) => {
+      if (String(col.id) === targetColId) {
+        return { ...col, tasks: [targetTask, ...(col.tasks || [])] };
+      }
+      return col;
+    }),
+  }));
+
+  setLocalData('boards', updatedBoards);
 
   try {
     const { data, error } = await supabase
@@ -549,7 +573,7 @@ export const updateTask = async (taskId, taskData) => {
     if (!error && data) return data;
   } catch {}
 
-  return { id: taskId, ...taskData };
+  return targetTask;
 };
 
 /**
