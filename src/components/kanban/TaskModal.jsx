@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Flag, AlignLeft, CheckCircle2, Trash2 } from 'lucide-react';
 
-export const TaskModal = ({ isOpen, onClose, onSave, onDelete, initialTask, columns }) => {
+export const TaskModal = ({ isOpen, onClose, onSave, onDelete, initialTask, targetColumnId, columns }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [columnId, setColumnId] = useState('');
@@ -12,17 +12,17 @@ export const TaskModal = ({ isOpen, onClose, onSave, onDelete, initialTask, colu
     if (initialTask) {
       setTitle(initialTask.title || '');
       setDescription(initialTask.description || '');
-      setColumnId(initialTask.column_id || (columns[0]?.id || ''));
+      setColumnId(String(initialTask.column_id || targetColumnId || columns[0]?.id || ''));
       setPriority(initialTask.priority || 'medium');
       setDueDate(initialTask.due_date ? initialTask.due_date.substring(0, 10) : '');
     } else {
       setTitle('');
       setDescription('');
-      setColumnId(columns[0]?.id || '');
+      setColumnId(String(targetColumnId || columns[0]?.id || ''));
       setPriority('medium');
       setDueDate('');
     }
-  }, [initialTask, columns, isOpen]);
+  }, [initialTask, targetColumnId, columns, isOpen]);
 
   if (!isOpen) return null;
 

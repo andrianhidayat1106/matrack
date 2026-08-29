@@ -726,6 +726,7 @@ export const TrelloKanban = () => {
         onSave={handleSaveTask}
         onDelete={handleDeleteTask}
         initialTask={editingTask}
+        targetColumnId={targetColumnForNewTask}
         columns={allAvailableColumns}
       />
     </div>
