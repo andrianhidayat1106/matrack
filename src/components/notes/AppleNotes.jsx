@@ -39,6 +39,7 @@ import {
   restoreNote,
   saveCustomFolder 
 } from '../../services/db';
+import { supabase } from '../../services/supabase';
 import { useAuth } from '../../context/AuthContext';
 
 export const AppleNotes = () => {
@@ -65,25 +66,25 @@ export const AppleNotes = () => {
   const saveTimeoutRef = useRef(null);
 
   // Fetch notes
-  const fetchNotes = async (selectFirst = false) => {
-    if (!user) return;
+  const fetchNotes = async (selectFirst = false, showSpinner = true) => {
+    if (!user?.id) return;
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       const res = await getNotes(user.id, {
         filter: activeFilter,
         folder: activeFolder,
         search: searchQuery,
       });
 
-      setNotes(res.notes);
+      setNotes(res.notes || []);
       if (res.folders && res.folders.length > 0) {
         const unique = Array.from(new Set(['Notes', ...res.folders]));
         setFolders(unique);
       }
 
-      if (selectFirst && res.notes.length > 0) {
+      if (selectFirst && res.notes && res.notes.length > 0) {
         selectNote(res.notes[0]);
-      } else if (res.notes.length === 0) {
+      } else if (res.notes && res.notes.length === 0) {
         setSelectedNoteId(null);
         setEditorTitle('');
         setEditorContent('');
@@ -91,17 +92,49 @@ export const AppleNotes = () => {
     } catch (err) {
       console.error('Failed to fetch notes', err);
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchNotes(true);
-  }, [activeFilter, activeFolder, user]);
+    if (!user?.id) return;
+    fetchNotes(true, true);
+
+    // Setup Supabase Realtime Channel for notes
+    const channelName = `realtime-notes-${user.id}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notes' },
+        () => {
+          fetchNotes(false, false);
+          refreshUserStats(user.id);
+        }
+      )
+      .subscribe();
+
+    const handleSyncOnFocus = () => {
+      fetchNotes(false, false);
+      refreshUserStats(user.id);
+    };
+
+    window.addEventListener('focus', handleSyncOnFocus);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        handleSyncOnFocus();
+      }
+    });
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', handleSyncOnFocus);
+    };
+  }, [activeFilter, activeFolder, user?.id]);
 
   useEffect(() => {
     const delayDebounce = setTimeout(() => {
-      fetchNotes(false);
+      fetchNotes(false, false);
     }, 300);
     return () => clearTimeout(delayDebounce);
   }, [searchQuery]);

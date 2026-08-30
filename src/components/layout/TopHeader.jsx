@@ -15,7 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import { MatrackLogo } from '../common/MatrackLogo';
 
 export const TopHeader = ({ currentView, onNavigate }) => {
-  const { user, logout, stats, backendOnline } = useAuth();
+  const { user, logout, stats, supabaseConnected } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -116,11 +116,11 @@ export const TopHeader = ({ currentView, onNavigate }) => {
         {/* Database / Supabase indicator */}
         <div 
           className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-white/10 text-[11px] text-slate-300"
-          title={backendOnline ? "API & Supabase connection healthy" : "Offline / Connecting"}
+          title={supabaseConnected ? "API & Supabase connection healthy" : "Offline / Connecting"}
         >
-          <span className={`w-2 h-2 rounded-full ${backendOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+          <span className={`w-2 h-2 rounded-full ${supabaseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
           <Database className="w-3 h-3 text-slate-400" />
-          <span className="font-mono">{backendOnline ? 'Supabase Ready' : 'Connecting...'}</span>
+          <span className="font-mono">{supabaseConnected ? 'Supabase Ready' : 'Connecting...'}</span>
         </div>
 
         {/* User Profile Dropdown */}

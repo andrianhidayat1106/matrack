@@ -29,6 +29,7 @@ import {
   moveTask, 
   deleteTask 
 } from '../../services/db';
+import { supabase } from '../../services/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { TaskModal } from './TaskModal';
 
@@ -54,22 +55,69 @@ export const TrelloKanban = () => {
   const [editingGroupName, setEditingGroupName] = useState('');
 
   // Fetch Boards (Each Board = 1 Project Row with 3 Columns)
-  const fetchBoardData = async () => {
-    if (!user) return;
+  const fetchBoardData = async (showLoadingSpinner = false) => {
+    if (!user?.id) return;
     try {
-      setLoading(true);
+      if (showLoadingSpinner) setLoading(true);
       const data = await getBoards(user.id);
       setBoards(data || []);
     } catch (err) {
       console.error('Failed to fetch boards', err);
     } finally {
-      setLoading(false);
+      if (showLoadingSpinner) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchBoardData();
-  }, [user]);
+    if (!user?.id) return;
+    fetchBoardData(true);
+
+    // Setup Supabase Realtime Channel for automatic instant updates across tabs/browsers
+    const channelName = `realtime-kanban-${user.id}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        () => {
+          fetchBoardData(false);
+          refreshUserStats(user.id);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'columns' },
+        () => {
+          fetchBoardData(false);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'boards' },
+        () => {
+          fetchBoardData(false);
+        }
+      )
+      .subscribe();
+
+    // Auto sync when user switches tabs or focuses browser window
+    const handleSyncOnFocus = () => {
+      fetchBoardData(false);
+      refreshUserStats(user.id);
+    };
+
+    window.addEventListener('focus', handleSyncOnFocus);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        handleSyncOnFocus();
+      }
+    });
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', handleSyncOnFocus);
+    };
+  }, [user?.id]);
 
   // Filter Tasks Helper
   const filterTask = (task) => {
