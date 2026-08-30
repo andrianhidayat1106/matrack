@@ -127,24 +127,27 @@ export const AppleNotes = () => {
     saveTimeoutRef.current = setTimeout(async () => {
       if (!selectedNoteId) return;
       try {
-        const updated = await updateNote(selectedNoteId, {
+        const payload = {
           title: newTitle || 'Untitled Note',
-          content: newContent,
-          folder: newFolder,
-        });
+          content: newContent || '',
+          folder: newFolder || 'Notes',
+        };
+        const updated = await updateNote(selectedNoteId, payload);
 
-        if (updated) {
-          setNotes((prev) =>
-            prev.map((item) => (item.id === selectedNoteId ? updated : item))
-          );
-        }
+        setNotes((prev) =>
+          prev.map((item) =>
+            String(item.id) === String(selectedNoteId)
+              ? { ...item, ...payload, ...(typeof updated === 'object' ? updated : {}) }
+              : item
+          )
+        );
         setSaveStatus('saved');
         refreshUserStats(user?.id);
       } catch (err) {
         console.error('Failed to auto-save note', err);
         setSaveStatus('unsaved');
       }
-    }, 800);
+    }, 500);
   };
 
   const handleTitleChange = (e) => {

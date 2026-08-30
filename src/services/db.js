@@ -258,6 +258,8 @@ export const createNote = async (userId, noteData) => {
 };
 
 export const updateNote = async (noteId, noteData) => {
+  let updatedObj = null;
+
   // Find note across all stored keys
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -265,10 +267,9 @@ export const updateNote = async (noteId, noteData) => {
       const list = getLocalData(key.replace('matrack_', ''), []);
       const match = list.find((n) => String(n.id) === String(noteId));
       if (match) {
+        updatedObj = { ...match, ...noteData, updated_at: new Date().toISOString() };
         const updated = list.map((n) =>
-          String(n.id) === String(noteId)
-            ? { ...n, ...noteData, updated_at: new Date().toISOString() }
-            : n
+          String(n.id) === String(noteId) ? updatedObj : n
         );
         setLocalData(key.replace('matrack_', ''), updated);
         break;
@@ -276,14 +277,22 @@ export const updateNote = async (noteId, noteData) => {
     }
   }
 
+  if (!updatedObj) {
+    updatedObj = { id: noteId, ...noteData, updated_at: new Date().toISOString() };
+  }
+
   try {
-    await supabase
+    const { data } = await supabase
       .from('notes')
       .update({ ...noteData, updated_at: new Date().toISOString() })
-      .eq('id', noteId);
+      .eq('id', noteId)
+      .select()
+      .single();
+
+    if (data) return data;
   } catch {}
 
-  return true;
+  return updatedObj;
 };
 
 export const togglePinNote = async (noteId, currentPinned) => {
