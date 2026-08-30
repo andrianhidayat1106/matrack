@@ -36,7 +36,8 @@ import {
   updateNote, 
   togglePinNote, 
   deleteNote, 
-  restoreNote 
+  restoreNote,
+  saveCustomFolder 
 } from '../../services/db';
 import { useAuth } from '../../context/AuthContext';
 
@@ -261,12 +262,19 @@ export const AppleNotes = () => {
   };
 
   // Add folder
-  const handleAddFolder = () => {
-    if (newFolderName.trim()) {
-      setFolders((prev) => Array.from(new Set([...prev, newFolderName.trim()])));
-      setActiveFolder(newFolderName.trim());
+  const handleAddFolder = async (e) => {
+    if (e) e.preventDefault();
+    const clean = newFolderName.trim();
+    if (clean && user) {
+      const updatedFolders = saveCustomFolder(user.id, clean);
+      setFolders(updatedFolders);
+      setActiveFolder(clean);
+      setEditorFolder(clean);
       setNewFolderName('');
       setShowNewFolderModal(false);
+      
+      // Automatically create a new note in this folder
+      await handleNewNote(clean);
     }
   };
 
@@ -721,8 +729,11 @@ export const AppleNotes = () => {
 
       {/* New Folder Modal */}
       {showNewFolderModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl animate-pop-in">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleAddFolder}
+            className="bg-slate-900 border border-white/10 rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl animate-pop-in"
+          >
             <h3 className="text-sm font-bold text-white flex items-center space-x-2">
               <FolderPlus className="w-4 h-4 text-amber-400" />
               <span>Create New Folder</span>
@@ -732,24 +743,26 @@ export const AppleNotes = () => {
               placeholder="Folder Name (e.g. Work, Ideas, Personal)"
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              required
+              className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
               autoFocus
             />
             <div className="flex items-center justify-end space-x-2 pt-2">
               <button
+                type="button"
                 onClick={() => setShowNewFolderModal(false)}
                 className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/10"
               >
                 Cancel
               </button>
               <button
-                onClick={handleAddFolder}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 text-slate-950 hover:bg-amber-400"
+                type="submit"
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-md transition-all active:scale-95"
               >
-                Create
+                Create Folder
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
     </div>

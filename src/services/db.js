@@ -145,9 +145,25 @@ export const initializeUserData = async (user) => {
    NOTES CRUD (Apple Notes Module)
    ========================================================================== */
 
+export const getCustomFolders = (userId) => {
+  const foldersKey = `folders_${userId}`;
+  return getLocalData(foldersKey, ['Notes']);
+};
+
+export const saveCustomFolder = (userId, folderName) => {
+  if (!folderName || !folderName.trim()) return ['Notes'];
+  const clean = folderName.trim();
+  const foldersKey = `folders_${userId}`;
+  const current = getLocalData(foldersKey, ['Notes']);
+  const updated = Array.from(new Set([...current, clean]));
+  setLocalData(foldersKey, updated);
+  return updated;
+};
+
 export const getNotes = async (userId, { filter = 'all', folder = 'all', search = '' } = {}) => {
   const notesKey = `notes_${userId}`;
   let notes = getLocalData(notesKey, []);
+  const customFolders = getCustomFolders(userId);
 
   try {
     const { data, error } = await supabase
@@ -158,7 +174,6 @@ export const getNotes = async (userId, { filter = 'all', folder = 'all', search 
       .order('updated_at', { ascending: false });
 
     if (!error && data && data.length > 0) {
-      // Merge cloud notes with local notes (avoid losing newer local notes)
       const cloudIds = new Set(data.map((n) => String(n.id)));
       const uniqueLocal = notes.filter((n) => !cloudIds.has(String(n.id)));
       notes = [...data, ...uniqueLocal];
@@ -189,7 +204,7 @@ export const getNotes = async (userId, { filter = 'all', folder = 'all', search 
   filtered.sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0));
 
   const distinctFolders = Array.from(
-    new Set(['Notes', ...notes.map((n) => n.folder).filter(Boolean)])
+    new Set(['Notes', ...customFolders, ...notes.map((n) => n.folder).filter(Boolean)])
   );
 
   return { notes: filtered, folders: distinctFolders };
