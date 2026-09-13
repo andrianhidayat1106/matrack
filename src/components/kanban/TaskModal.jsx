@@ -41,10 +41,10 @@ export const TaskModal = ({ isOpen, onClose, onSave, onDelete, initialTask, targ
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-pop-in">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-pop-in max-h-[90vh] flex flex-col">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-slate-950/40">
+        <div className="px-5 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 flex items-center justify-between bg-slate-950/40 shrink-0">
           <div className="flex items-center space-x-2">
             <span className="text-xs font-bold uppercase tracking-wider text-blue-400">
               {initialTask ? 'Edit Task Card' : 'Create New Task Card'}
@@ -59,7 +59,7 @@ export const TaskModal = ({ isOpen, onClose, onSave, onDelete, initialTask, targ
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
           {/* Title */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">

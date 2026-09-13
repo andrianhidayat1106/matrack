@@ -448,11 +448,11 @@ export const TrelloKanban = () => {
   };
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] flex flex-col bg-slate-950 text-slate-100 pb-16 overflow-y-auto">
+    <div className="min-h-[calc(100vh-3.5rem)] flex flex-col bg-slate-950 text-slate-100 pb-24 md:pb-16 overflow-y-auto">
       {/* ------------------------------------------------------------- */}
       {/* Top Filter & Quick Controls Bar */}
       {/* ------------------------------------------------------------- */}
-      <div className="border-b border-white/10 bg-slate-900/80 backdrop-blur-md px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30 shadow-md">
+      <div className="border-b border-white/10 bg-slate-900/80 backdrop-blur-md px-3 sm:px-6 py-2.5 sm:py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30 shadow-md">
         {/* Left: Search & Quick Filters */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Search Box */}
@@ -524,7 +524,7 @@ export const TrelloKanban = () => {
       {/* ------------------------------------------------------------- */}
       {/* Multi-Row Project Lanes (1 Project = 3 Columns on New Line) */}
       {/* ------------------------------------------------------------- */}
-      <div className="p-6 max-w-7xl mx-auto w-full space-y-8">
+      <div className="p-3 sm:p-6 max-w-7xl mx-auto w-full space-y-6 sm:space-y-8">
         {loading && boards.length === 0 ? (
           <div className="py-20 text-center text-slate-500 text-xs">
             Memuat papan jadwal...
@@ -544,7 +544,7 @@ export const TrelloKanban = () => {
               return (
                 <div
                   key={board.id}
-                  className="rounded-3xl bg-slate-900/80 border border-white/10 p-6 shadow-2xl backdrop-blur-xl space-y-5"
+                  className="rounded-2xl sm:rounded-3xl bg-slate-900/80 border border-white/10 p-4 sm:p-6 shadow-2xl backdrop-blur-xl space-y-5"
                 >
                   {/* Row Header: Project Title, Progress & Actions */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
@@ -584,12 +584,12 @@ export const TrelloKanban = () => {
                     </div>
 
                     {/* Progress Indicator & Delete Row Button */}
-                    <div className="flex items-center space-x-4">
+                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
                       {/* Progress bar */}
-                      <div className="flex items-center space-x-3 bg-slate-950/60 px-3.5 py-1.5 rounded-xl border border-white/5 text-xs">
+                      <div className="flex items-center space-x-2.5 sm:space-x-3 bg-slate-950/60 px-3 sm:px-3.5 py-1.5 rounded-xl border border-white/5 text-xs">
                         <span className="text-slate-400">Progress:</span>
                         <span className="font-bold text-emerald-400">{doneTasks.length}/{allBoardTasks.length} Selesai</span>
-                        <div className="w-24 h-2 bg-white/10 rounded-full overflow-hidden">
+                        <div className="w-16 sm:w-24 h-2 bg-white/10 rounded-full overflow-hidden">
                           <div 
                             className="h-full bg-emerald-500 transition-all duration-500"
                             style={{ width: `${progressPct}%` }}

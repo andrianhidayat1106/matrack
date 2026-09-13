@@ -10,7 +10,8 @@ import {
   CheckCircle2, 
   Pin,
   ArrowRight,
-  TrendingUp
+  TrendingUp,
+  Network
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { MatrackLogo } from '../common/MatrackLogo';
@@ -40,12 +41,12 @@ export const AppLauncherGrid = ({ onOpenApp }) => {
     {
       id: 'schedule',
       name: 'Schedule',
-      subtitle: 'Trello-style Kanban Task Boards',
-      icon: Kanban,
+      subtitle: 'Obsidian Brain Graph & Kanban Boards',
+      icon: Network,
       gradient: 'from-blue-600 to-cyan-500',
-      badgeText: stats ? `${stats.tasks_pending || 0} Pending Tasks` : 'Kanban',
+      badgeText: stats ? `${stats.tasks_pending || 0} Pending` : 'Mind Map',
       badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-      description: 'Drag & drop task management, due date tracking, priority tags, and agile workflow columns.',
+      description: 'Pemetaan visual otak proyek, pelacakan kemajuan, node sinapsis tugas, dan alur kerja kanban.',
       hotkey: 'S',
     },
     {
@@ -87,15 +88,15 @@ export const AppLauncherGrid = ({ onOpenApp }) => {
   });
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] flex flex-col justify-between p-6 sm:p-10 lg:p-14 relative overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-[calc(100vh-3.5rem)] flex flex-col justify-between p-4 sm:p-8 lg:p-12 pb-24 md:pb-12 relative overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Background Decorative Glow Elements */}
       <div className="absolute top-[-10%] left-[20%] w-[450px] h-[450px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[15%] w-[400px] h-[400px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute top-[40%] right-[5%] w-[300px] h-[300px] bg-amber-500/10 rounded-full blur-[100px] pointer-events-none" />
 
       {/* Top Section: Greeting, Live Clock & App Search */}
-      <div className="max-w-5xl mx-auto w-full space-y-8 z-10">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b border-white/10">
+      <div className="max-w-5xl mx-auto w-full space-y-6 sm:space-y-8 z-10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6 pb-4 border-b border-white/10">
           <div className="space-y-2">
             <div className="flex items-center space-x-3 mb-1">
               <MatrackLogo size="sm" showText={true} />
@@ -103,22 +104,22 @@ export const AppLauncherGrid = ({ onOpenApp }) => {
                 v2.0 Serverless
               </span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
               {getGreeting()}, <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-amber-300 bg-clip-text text-transparent">{user?.name || 'User'}</span>
             </h1>
-            <p className="text-slate-400 text-sm mt-1">
+            <p className="text-slate-400 text-xs sm:text-sm mt-1">
               Pilih modul aplikasi produktivitas harian Anda di bawah ini.
             </p>
           </div>
 
           {/* Clock Widget */}
-          <div className="glass-card px-5 py-3 rounded-2xl flex items-center space-x-4 border border-white/10 shadow-xl self-start md:self-auto">
-            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              <Clock className="w-5 h-5" />
+          <div className="glass-card px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl flex items-center space-x-3 sm:space-x-4 border border-white/10 shadow-xl self-start md:self-auto">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <Clock className="w-4 sm:w-5 h-4 sm:h-5" />
             </div>
             <div>
-              <div className="text-lg font-bold text-white font-mono tracking-wider">{formattedTime}</div>
-              <div className="text-xs text-slate-400 flex items-center space-x-1">
+              <div className="text-base sm:text-lg font-bold text-white font-mono tracking-wider">{formattedTime}</div>
+              <div className="text-[11px] sm:text-xs text-slate-400 flex items-center space-x-1">
                 <Calendar className="w-3 h-3 text-slate-500" />
                 <span>{formattedDate}</span>
               </div>
@@ -128,18 +129,18 @@ export const AppLauncherGrid = ({ onOpenApp }) => {
 
         {/* Search Bar for Odoo Apps */}
         <div className="relative max-w-xl mx-auto">
-          <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 sm:w-5 h-4 sm:h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search applications (Notes, Schedule, Settings)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-slate-900/80 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 backdrop-blur-xl transition-all shadow-lg shadow-black/30"
+            className="w-full pl-11 sm:pl-12 pr-4 py-3 sm:py-3.5 rounded-2xl bg-slate-900/80 border border-white/10 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 backdrop-blur-xl transition-all shadow-lg shadow-black/30"
           />
         </div>
 
         {/* Odoo App Grid (Main Navigation Tiles) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 pt-2 sm:pt-4">
           {filteredApps.map((app) => {
             const Icon = app.icon;
             return (

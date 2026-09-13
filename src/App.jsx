@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { TopHeader } from './components/layout/TopHeader';
 import { AppLauncherGrid } from './components/odoo/AppLauncherGrid';
 import { AppleNotes } from './components/notes/AppleNotes';
-import { TrelloKanban } from './components/kanban/TrelloKanban';
+import { ScheduleView } from './components/schedule/ScheduleView';
 import { AccountSettings } from './components/settings/AccountSettings';
 import { AuthModal } from './components/auth/AuthModal';
 
@@ -42,12 +42,12 @@ const MainLayout = () => {
       <TopHeader currentView={currentView} onNavigate={setCurrentView} />
 
       {/* Main Module Content Area */}
-      <main className="flex-1">
+      <main className="flex-1 pb-16 md:pb-0">
         {currentView === 'odoo' && (
           <AppLauncherGrid onOpenApp={(appId) => setCurrentView(appId)} />
         )}
         {currentView === 'notes' && <AppleNotes />}
-        {currentView === 'schedule' && <TrelloKanban />}
+        {currentView === 'schedule' && <ScheduleView />}
         {currentView === 'settings' && <AccountSettings />}
       </main>
     </div>

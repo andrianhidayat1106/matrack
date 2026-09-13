@@ -79,8 +79,8 @@ export const AccountSettings = () => {
   };
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-slate-950 p-6 sm:p-10 overflow-y-auto">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="min-h-[calc(100vh-3.5rem)] bg-slate-950 p-4 sm:p-8 lg:p-10 pb-24 md:pb-10 overflow-y-auto">
+      <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
         {/* Header */}
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">

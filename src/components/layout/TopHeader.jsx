@@ -115,19 +115,19 @@ export const TopHeader = ({ currentView, onNavigate }) => {
 
         {/* Database / Supabase indicator */}
         <div 
-          className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-white/10 text-[11px] text-slate-300"
+          className="flex items-center space-x-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-slate-900 border border-white/10 text-[11px] text-slate-300"
           title={supabaseConnected ? "API & Supabase connection healthy" : "Offline / Connecting"}
         >
           <span className={`w-2 h-2 rounded-full ${supabaseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-          <Database className="w-3 h-3 text-slate-400" />
-          <span className="font-mono">{supabaseConnected ? 'Supabase Ready' : 'Connecting...'}</span>
+          <Database className="w-3 h-3 text-slate-400 hidden sm:inline" />
+          <span className="font-mono text-[10px] sm:text-[11px]">{supabaseConnected ? 'Ready' : 'Offline'}</span>
         </div>
 
         {/* User Profile Dropdown */}
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center space-x-2 pl-2 pr-2.5 py-1.5 rounded-xl hover:bg-white/10 border border-transparent hover:border-white/10 transition-all active:scale-95"
+            className="flex items-center space-x-1.5 sm:space-x-2 pl-1.5 sm:pl-2 pr-2 sm:pr-2.5 py-1.5 rounded-xl hover:bg-white/10 border border-transparent hover:border-white/10 transition-all active:scale-95"
           >
             <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-semibold text-xs flex items-center justify-center shadow-inner">
               {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
@@ -139,7 +139,7 @@ export const TopHeader = ({ currentView, onNavigate }) => {
           </button>
 
           {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-white/10 shadow-2xl p-2 z-50 animate-pop-in">
+            <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-white/10 shadow-2xl p-2 z-50 animate-pop-in">
               <div className="px-3 py-2.5 border-b border-white/10">
                 <p className="text-xs font-semibold text-white truncate">{user?.name}</p>
                 <p className="text-[11px] text-slate-400 truncate">{user?.email}</p>
@@ -196,6 +196,69 @@ export const TopHeader = ({ currentView, onNavigate }) => {
           )}
         </div>
       </div>
+
+      {/* ============================================================== */}
+      {/* Native-style Mobile Bottom Navigation Bar (Visible only on < md) */}
+      {/* ============================================================== */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-slate-950/95 backdrop-blur-xl border-t border-white/10 px-2 py-1.5 flex items-center justify-around shadow-2xl safe-area-pb">
+        <button
+          onClick={() => onNavigate('odoo')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all ${
+            currentView === 'odoo'
+              ? 'text-emerald-400 font-bold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <LayoutGrid className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Launcher</span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('notes')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all relative ${
+            currentView === 'notes'
+              ? 'text-amber-400 font-bold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <FileText className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Notes</span>
+          {stats?.notes_count > 0 && (
+            <span className="absolute top-0.5 right-1/4 w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[9px] font-extrabold flex items-center justify-center">
+              {stats.notes_count > 99 ? '99+' : stats.notes_count}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => onNavigate('schedule')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all relative ${
+            currentView === 'schedule'
+              ? 'text-blue-400 font-bold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Kanban className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Schedule</span>
+          {stats?.tasks_pending > 0 && (
+            <span className="absolute top-0.5 right-1/4 w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-extrabold flex items-center justify-center">
+              {stats.tasks_pending > 99 ? '99+' : stats.tasks_pending}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => onNavigate('settings')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all ${
+            currentView === 'settings'
+              ? 'text-purple-400 font-bold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Settings className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Settings</span>
+        </button>
+      </nav>
     </header>
   );
 };

@@ -16,6 +16,7 @@ import {
   FileEdit,
   Trash,
   ChevronRight,
+  ChevronLeft,
   RotateCcw,
   Bold,
   Italic,
@@ -51,6 +52,7 @@ export const AppleNotes = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [mobileView, setMobileView] = useState('list'); // 'list' | 'editor'
 
   // Editor states
   const [editorTitle, setEditorTitle] = useState('');
@@ -83,7 +85,7 @@ export const AppleNotes = () => {
       }
 
       if (selectFirst && res.notes && res.notes.length > 0) {
-        selectNote(res.notes[0]);
+        selectNote(res.notes[0], false);
       } else if (res.notes && res.notes.length === 0) {
         setSelectedNoteId(null);
         setEditorTitle('');
@@ -140,13 +142,16 @@ export const AppleNotes = () => {
   }, [searchQuery]);
 
   // Select note into editor
-  const selectNote = (note) => {
+  const selectNote = (note, openEditorMobile = true) => {
     if (!note) return;
     setSelectedNoteId(note.id);
     setEditorTitle(note.title || '');
     setEditorContent(note.content || '');
     setEditorFolder(note.folder || 'Notes');
     setSaveStatus('saved');
+    if (openEditorMobile) {
+      setMobileView('editor');
+    }
   };
 
   // Currently selected note object
@@ -445,7 +450,7 @@ export const AppleNotes = () => {
       {/* ------------------------------------------------------------- */}
       {/* 2. MIDDLE COLUMN: Notes List Pane */}
       {/* ------------------------------------------------------------- */}
-      <section className="w-72 sm:w-80 border-r border-white/10 bg-slate-900/60 backdrop-blur-md flex flex-col shrink-0">
+      <section className={`border-r border-white/10 bg-slate-900/60 backdrop-blur-md flex flex-col shrink-0 ${mobileView === 'editor' ? 'hidden md:flex md:w-80' : 'flex w-full md:w-80'}`}>
         {/* Header & Search */}
         <div className="p-3 border-b border-white/10 space-y-2">
           <div className="flex items-center justify-between">
@@ -461,6 +466,51 @@ export const AppleNotes = () => {
                 <Plus className="w-4 h-4" />
               </button>
             </div>
+          </div>
+
+          {/* Mobile Quick Folder / Filter Pills Carousel */}
+          <div className="md:hidden flex items-center space-x-1.5 overflow-x-auto pb-1 pt-0.5 text-xs no-scrollbar">
+            <button
+              onClick={() => { setActiveFilter('all'); setActiveFolder('all'); }}
+              className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                activeFilter === 'all' && activeFolder === 'all' ? 'bg-amber-500/20 text-amber-300 font-bold' : 'bg-white/5 text-slate-400'
+              }`}
+            >
+              All Notes
+            </button>
+            <button
+              onClick={() => { setActiveFilter('pinned'); setActiveFolder('all'); }}
+              className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                activeFilter === 'pinned' ? 'bg-amber-500/20 text-amber-300 font-bold' : 'bg-white/5 text-slate-400'
+              }`}
+            >
+              📌 Pinned
+            </button>
+            <button
+              onClick={() => { setActiveFilter('trash'); setActiveFolder('all'); }}
+              className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                activeFilter === 'trash' ? 'bg-rose-500/20 text-rose-300 font-bold' : 'bg-white/5 text-slate-400'
+              }`}
+            >
+              🗑 Trash
+            </button>
+            {folders.map(f => (
+              <button
+                key={f}
+                onClick={() => { setActiveFilter('all'); setActiveFolder(f); }}
+                className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                  activeFolder === f && activeFilter === 'all' ? 'bg-white/15 text-white font-bold' : 'bg-white/5 text-slate-400'
+                }`}
+              >
+                📁 {f}
+              </button>
+            ))}
+            <button
+              onClick={() => setShowNewFolderModal(true)}
+              className="px-2.5 py-1 rounded-lg shrink-0 bg-white/5 text-slate-400 hover:text-white"
+            >
+              + Folder
+            </button>
           </div>
 
           <div className="relative">
@@ -562,13 +612,21 @@ export const AppleNotes = () => {
       {/* ------------------------------------------------------------- */}
       {/* 3. RIGHT COLUMN: Main Note Editor Area */}
       {/* ------------------------------------------------------------- */}
-      <main className="flex-1 flex flex-col bg-slate-950 overflow-hidden">
+      <main className={`flex-1 flex flex-col bg-slate-950 overflow-hidden ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
         {selectedNoteId && currentNote ? (
           <>
             {/* Editor Toolbar */}
             <div className="h-12 border-b border-white/10 px-4 flex items-center justify-between bg-slate-900/40 backdrop-blur-md">
-              {/* Formatting Actions */}
+              {/* Mobile Back Button & Formatting Actions */}
               <div className="flex items-center space-x-1 overflow-x-auto py-1">
+                <button
+                  onClick={() => setMobileView('list')}
+                  className="md:hidden flex items-center space-x-1 py-1 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-amber-400 text-xs font-semibold shrink-0 mr-1.5 active:scale-95"
+                  title="Kembali ke Daftar Catatan"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Catatan</span>
+                </button>
                 <button
                   onClick={() => insertFormatting('**', '**')}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
