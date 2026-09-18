@@ -11,14 +11,10 @@ import {
   CalendarDays,
   Clock,
   Layers,
-  FileText,
-  Check,
   Trash2,
   ExternalLink,
   ChevronDown,
-  ChevronUp,
-  Tag,
-  AlertCircle
+  ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { 
@@ -29,9 +25,11 @@ import {
   deleteTask,
   getCustomSchedules,
   saveCustomSchedule,
-  deleteCustomSchedule
+  deleteCustomSchedule,
+  getNotes
 } from '../../services/db';
 import { TaskModal } from '../kanban/TaskModal';
+import { UnifiedActivityStats } from './UnifiedActivityStats';
 
 // 24 Hour Slots Helper
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => {
@@ -54,9 +52,10 @@ export const JadwalView = ({ onNavigate }) => {
   // Collapsible toggle for Kotak Usia
   const [isAgeGridExpanded, setIsAgeGridExpanded] = useState(true);
 
-  // Boards & tasks state
+  // Boards, tasks & notes state
   const [boards, setBoards] = useState([]);
   const [customSchedules, setCustomSchedules] = useState([]);
+  const [notes, setNotes] = useState([]);
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('all');
 
   // Active Day for Mobile View
@@ -98,16 +97,18 @@ export const JadwalView = ({ onNavigate }) => {
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [newQuickTaskTitle, setNewQuickTaskTitle] = useState('');
 
-  // Load Boards and Custom Schedules
+  // Load Boards, Custom Schedules and Notes
   const loadData = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [boardsData, schedulesData] = await Promise.all([
+      const [boardsData, schedulesData, notesData] = await Promise.all([
         getBoards(user.id),
         getCustomSchedules(user.id),
+        getNotes(user.id),
       ]);
       setBoards(boardsData || []);
       setCustomSchedules(schedulesData || []);
+      setNotes(notesData?.notes || []);
     } catch (err) {
       console.error('Failed to load schedule data', err);
     }
@@ -360,50 +361,62 @@ export const JadwalView = ({ onNavigate }) => {
     }
   }, [timeSegmentFilter]);
 
-  // Combine Tasks & Custom Schedules into a 24-hour day-hour map
-  // Key format: `${isoDate}_${hourString}` e.g. "2026-09-18_09:00"
-  const scheduleMatrix = useMemo(() => {
-    const matrix = {};
+  // Combine Tasks & Custom Schedules into Continuous Multi-Hour Spanning Events
+  // Calculates top, height, widthPct, and leftPct for side-by-side overlapping multi-tasks
+  const positionedEventsByDay = useMemo(() => {
+    const HOUR_HEIGHT = 64;
+    const segmentStartHour = parseInt(displayedHours[0].split(':')[0], 10);
+    const segmentEndHour = parseInt(displayedHours[displayedHours.length - 1].split(':')[0], 10) + 1;
 
-    // Helper to extract hour string "09:00"
-    const extractHour = (dateStr) => {
-      try {
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return null;
-        return `${String(d.getHours()).padStart(2, '0')}:00`;
-      } catch {
-        return null;
-      }
+    // Helper to convert time string "08:30" or "08:00" to decimal hour
+    const toDecimal = (tStr, defaultVal = 9.0) => {
+      if (!tStr) return defaultVal;
+      const [h, m] = tStr.split(':').map(Number);
+      return (h || 0) + (m || 0) / 60;
     };
+
+    // Prepare day map for the current week
+    const dayMap = {};
+    currentWeekDays.forEach((d) => {
+      dayMap[d.isoDate] = [];
+    });
 
     const processedTaskIds = new Set();
 
     // 1. Process Custom Schedules
     (customSchedules || []).forEach((sched) => {
-      if (!sched.date) return;
+      if (!sched.date || !dayMap[sched.date]) return;
       if (sched.task_id) {
         processedTaskIds.add(String(sched.task_id));
       }
-      const startHour = sched.start_time ? `${sched.start_time.split(':')[0].padStart(2, '0')}:00` : '09:00';
-      const key = `${sched.date}_${startHour}`;
-      if (!matrix[key]) matrix[key] = [];
-      matrix[key].push({
+
+      const sDec = toDecimal(sched.start_time, 9.0);
+      let eDec = toDecimal(sched.end_time, sDec + 1.0);
+      if (eDec <= sDec) {
+        eDec = sDec + 1.0;
+      }
+      const rawDurationHours = Math.round((eDec - sDec) * 10) / 10;
+
+      dayMap[sched.date].push({
         id: sched.id,
         taskId: sched.task_id,
         title: sched.title,
         type: sched.type || 'custom',
-        start_time: sched.start_time,
-        end_time: sched.end_time,
+        start_time: sched.start_time || '09:00',
+        end_time: sched.end_time || `${String(Math.min(23, Math.floor(sDec + 1))).padStart(2, '0')}:00`,
         color: sched.color || (sched.type === 'task' ? 'blue' : 'emerald'),
         notes: sched.notes,
         board_name: sched.board_name,
         board_id: sched.board_id,
-        is_completed: sched.is_completed,
+        is_completed: Boolean(sched.is_completed),
         raw: sched,
+        startDecimal: sDec,
+        endDecimal: eDec,
+        rawDurationHours,
       });
     });
 
-    // 2. Process Project Tasks with due_date (skip if already registered in customSchedules)
+    // 2. Process Project Tasks with due_date
     (allTasks || []).forEach((task) => {
       if (processedTaskIds.has(String(task.id))) return;
       if (selectedProjectFilter !== 'all' && String(task.board_id) !== String(selectedProjectFilter)) {
@@ -417,39 +430,143 @@ export const JadwalView = ({ onNavigate }) => {
           const month = String(tDate.getMonth() + 1).padStart(2, '0');
           const dayStr = String(tDate.getDate()).padStart(2, '0');
           const isoDate = `${year}-${month}-${dayStr}`;
-          const hour = extractHour(task.due_date) || '09:00';
-          const key = `${isoDate}_${hour}`;
 
-          const isDone =
-            (task.column_name || '').toLowerCase().includes('selesai') ||
-            (task.column_name || '').toLowerCase().includes('done');
+          if (dayMap[isoDate]) {
+            const h = tDate.getHours();
+            const m = tDate.getMinutes();
+            const sDec = h + m / 60;
+            const eDec = sDec + 1.0;
+            const start_time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+            const end_time = `${String(Math.min(23, h + 1)).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
-          if (!matrix[key]) matrix[key] = [];
-          matrix[key].push({
-            id: task.id,
-            taskId: task.id,
-            title: task.title,
-            type: 'task',
-            start_time: `${String(tDate.getHours()).padStart(2, '0')}:${String(tDate.getMinutes()).padStart(2, '0')}`,
-            end_time: '',
-            color: 'blue',
-            board_name: task.board_name,
-            board_id: task.board_id,
-            priority: task.priority,
-            is_completed: isDone,
-            raw: task,
-          });
+            const isDone =
+              (task.column_name || '').toLowerCase().includes('selesai') ||
+              (task.column_name || '').toLowerCase().includes('done');
+
+            dayMap[isoDate].push({
+              id: task.id,
+              taskId: task.id,
+              title: task.title,
+              type: 'task',
+              start_time,
+              end_time,
+              color: 'blue',
+              board_name: task.board_name,
+              board_id: task.board_id,
+              priority: task.priority,
+              is_completed: isDone,
+              raw: task,
+              startDecimal: sDec,
+              endDecimal: eDec,
+              rawDurationHours: 1,
+            });
+          }
         }
       }
     });
 
-    return matrix;
-  }, [customSchedules, allTasks, selectedProjectFilter]);
+    // For each day, calculate continuous position and cluster collisions
+    const resultMap = {};
+
+    Object.keys(dayMap).forEach((isoDate) => {
+      const rawEvents = dayMap[isoDate];
+
+      // Filter events visible within current time segment
+      const visibleEvents = rawEvents
+        .filter((ev) => ev.endDecimal > segmentStartHour && ev.startDecimal < segmentEndHour)
+        .map((ev) => {
+          const effectiveStart = Math.max(segmentStartHour, ev.startDecimal);
+          const effectiveEnd = Math.min(segmentEndHour, ev.endDecimal);
+          const duration = Math.max(0.5, effectiveEnd - effectiveStart);
+          return {
+            ...ev,
+            effectiveStart,
+            effectiveEnd,
+            duration,
+          };
+        });
+
+      // Sort by effectiveStart asc, then duration desc
+      visibleEvents.sort((a, b) => {
+        if (a.effectiveStart !== b.effectiveStart) {
+          return a.effectiveStart - b.effectiveStart;
+        }
+        return b.duration - a.duration;
+      });
+
+      // Cluster overlapping events
+      const clusters = [];
+      let currentCluster = [];
+      let clusterEnd = -1;
+
+      visibleEvents.forEach((ev) => {
+        if (currentCluster.length === 0) {
+          currentCluster.push(ev);
+          clusterEnd = ev.effectiveEnd;
+        } else if (ev.effectiveStart < clusterEnd) {
+          currentCluster.push(ev);
+          clusterEnd = Math.max(clusterEnd, ev.effectiveEnd);
+        } else {
+          clusters.push(currentCluster);
+          currentCluster = [ev];
+          clusterEnd = ev.effectiveEnd;
+        }
+      });
+      if (currentCluster.length > 0) {
+        clusters.push(currentCluster);
+      }
+
+      // Assign horizontal slots per cluster
+      const positioned = [];
+
+      clusters.forEach((cluster) => {
+        const colEnds = [];
+        const clusterAssignments = [];
+
+        cluster.forEach((ev) => {
+          let colIdx = colEnds.findIndex((end) => end <= ev.effectiveStart);
+          if (colIdx === -1) {
+            colIdx = colEnds.length;
+            colEnds.push(ev.effectiveEnd);
+          } else {
+            colEnds[colIdx] = ev.effectiveEnd;
+          }
+          clusterAssignments.push({ ev, colIdx });
+        });
+
+        const totalCols = Math.max(colEnds.length, 1);
+
+        clusterAssignments.forEach(({ ev, colIdx }) => {
+          const top = (ev.effectiveStart - segmentStartHour) * HOUR_HEIGHT;
+          const height = Math.max(34, ev.duration * HOUR_HEIGHT);
+          const widthPct = 100 / totalCols;
+          const leftPct = colIdx * widthPct;
+
+          positioned.push({
+            ...ev,
+            top,
+            height,
+            widthPct,
+            leftPct,
+            colIdx,
+            totalCols,
+          });
+        });
+      });
+
+      resultMap[isoDate] = positioned;
+    });
+
+    return resultMap;
+  }, [displayedHours, currentWeekDays, customSchedules, allTasks, selectedProjectFilter]);
 
   // Open the 2-choice Add Modal prefilled for a given day and hour
-  const handleOpenAddModal = (isoDate, hourStr = '08:00') => {
-    setScheduleDate(isoDate || currentWeekDays[0].isoDate);
-    const startHour = hourStr || '08:00';
+  const handleOpenAddModal = (isoDate = null, hourStr = null) => {
+    const defaultDate = currentWeekDays.find((d) => d.isToday)?.isoDate || currentWeekDays[0]?.isoDate;
+    setScheduleDate(isoDate || defaultDate);
+    
+    const currentHour = `${String(new Date().getHours()).padStart(2, '0')}:00`;
+    const startHour = hourStr || currentHour;
     setScheduleStartTime(startHour);
 
     // Compute end hour (1 hour later)
@@ -473,6 +590,150 @@ export const JadwalView = ({ onNavigate }) => {
 
     setScheduleChoiceType('nama');
     setIsAddScheduleModalOpen(true);
+  };
+
+  // Render individual event card (spans full duration, side-by-side if overlapping)
+  const renderEventCard = (item, day) => {
+    const isCustom = item.type === 'custom';
+    const colorObj =
+      SCHEDULE_COLORS.find((c) => c.id === item.color) || SCHEDULE_COLORS[0];
+    const isTallCard = item.height >= 110;
+
+    return (
+      <div
+        key={item.id}
+        style={{
+          position: 'absolute',
+          top: `${item.top}px`,
+          height: `${item.height}px`,
+          left: `${item.leftPct}%`,
+          width: `calc(${item.widthPct}% - 4px)`,
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (item.type === 'task') {
+            setEditingTask(item.raw);
+            setIsTaskModalOpen(true);
+          }
+        }}
+        className={`pointer-events-auto p-2 rounded-2xl border text-xs transition-all shadow-md group/item overflow-hidden flex flex-col justify-between ${
+          item.is_completed
+            ? 'bg-slate-900/80 border-white/10 opacity-55'
+            : isCustom
+            ? `${colorObj.bg} ${colorObj.border} ${colorObj.text} backdrop-blur-md`
+            : 'bg-blue-600/25 border-blue-500/40 text-blue-100 backdrop-blur-md'
+        }`}
+      >
+        {/* Top bar: Checkbox + Title + Actions */}
+        <div className="flex items-start justify-between gap-1.5">
+          <div className="flex items-start space-x-1.5 flex-1 min-w-0">
+            {/* Toggle Checkbox */}
+            <button
+              onClick={(e) => handleToggleDone(item, e)}
+              className={`mt-0.5 shrink-0 transition-transform active:scale-90 ${
+                item.is_completed
+                  ? 'text-emerald-400'
+                  : 'text-slate-400 hover:text-emerald-400'
+              }`}
+              title={item.is_completed ? 'Tandai Belum Selesai' : 'Tandai Selesai'}
+            >
+              {item.is_completed ? (
+                <CheckCircle2 className="w-3.5 h-3.5 fill-emerald-500/20" />
+              ) : (
+                <Circle className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            <div className="min-w-0 flex-1">
+              <h4
+                className={`font-bold leading-snug break-words line-clamp-2 ${
+                  item.is_completed ? 'line-through text-slate-500' : 'text-white'
+                }`}
+              >
+                {item.title}
+              </h4>
+
+              {/* Time & Duration badge */}
+              <div className="flex flex-wrap items-center gap-1 mt-0.5 text-[10px] text-slate-300 font-mono">
+                <span className="font-semibold text-emerald-300">
+                  {item.start_time} - {item.end_time || ''}
+                </span>
+                {item.rawDurationHours > 1 && (
+                  <span className="px-1 py-0.2 rounded bg-white/10 text-[9px] text-slate-300">
+                    {item.rawDurationHours} Jam
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons on top right */}
+          <div className="flex items-center space-x-1 shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
+            {/* Quick add another task at the same hour */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenAddModal(day.isoDate, item.start_time);
+              }}
+              className="p-1 rounded-md bg-white/10 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300"
+              title="Tambah task lain di jam yang sama"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+
+            {/* Route to Proyek Button (if task) */}
+            {item.type === 'task' && onNavigate && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigate('schedule');
+                }}
+                className="p-1 rounded-md bg-white/10 text-blue-300 hover:text-white"
+                title="Buka Halaman Proyek / Task"
+              >
+                <ExternalLink className="w-3 h-3" />
+              </button>
+            )}
+
+            {/* Delete Item Button */}
+            <button
+              onClick={(e) => handleDeleteScheduleItem(item, e)}
+              className="p-1 rounded-md bg-white/10 text-slate-400 hover:text-rose-400 hover:bg-rose-500/20"
+              title="Hapus Jadwal"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tall Card Extended Content (Notes / Board Name / + Quick Add) */}
+        {isTallCard && (
+          <div className="mt-2 pt-2 border-t border-white/10 text-[11px] space-y-1.5">
+            {item.board_name && (
+              <div className="flex items-center space-x-1 text-blue-300">
+                <Layers className="w-3 h-3 shrink-0" />
+                <span className="truncate font-medium">{item.board_name}</span>
+              </div>
+            )}
+            {item.notes && (
+              <p className="text-slate-300 text-[10px] line-clamp-2 italic bg-black/20 p-1.5 rounded-lg">
+                "{item.notes}"
+              </p>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenAddModal(day.isoDate, item.start_time);
+              }}
+              className="w-full py-1 px-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] text-slate-300 hover:text-white font-medium flex items-center justify-center space-x-1 transition-all"
+            >
+              <Plus className="w-3 h-3 text-emerald-400" />
+              <span>+ Tambah task lain di jam ini</span>
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Save Schedule Event (Choice 1: By Nama Aja vs Choice 2: Tugas Proyek)
@@ -808,7 +1069,19 @@ export const JadwalView = ({ onNavigate }) => {
       )}
 
       {/* ============================================================= */}
-      {/* SECTION 2: JADWAL 24 JAM (Weekly 24-Hour Timetable)           */}
+      {/* SECTION 2: STATISTIK KEAKTIFAN TERPADU (Daily & Weekly)      */}
+      {/* ============================================================= */}
+      <UnifiedActivityStats
+        boards={boards}
+        customSchedules={customSchedules}
+        notes={notes}
+        ageGridCalculation={ageGridCalculation}
+        currentWeekDays={currentWeekDays}
+        onNavigate={onNavigate}
+      />
+
+      {/* ============================================================= */}
+      {/* SECTION 3: JADWAL 24 JAM (Weekly 24-Hour Timetable)           */}
       {/* ============================================================= */}
       <section className="glass-card rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex flex-col flex-1">
         {/* Timetable Header Bar: Week Selector, Filter & Add Button */}
@@ -920,7 +1193,11 @@ export const JadwalView = ({ onNavigate }) => {
 
             {/* + TAMBAH JADWAL BUTTON */}
             <button
-              onClick={() => handleOpenAddModal(currentWeekDays[0]?.isoDate, '08:00')}
+              onClick={() => {
+                const todayIso = currentWeekDays.find((d) => d.isToday)?.isoDate || currentWeekDays[0]?.isoDate;
+                const currentHour = `${String(new Date().getHours()).padStart(2, '0')}:00`;
+                handleOpenAddModal(todayIso, currentHour);
+              }}
               className="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all active:scale-95 shrink-0"
             >
               <Plus className="w-4 h-4" />
@@ -950,10 +1227,10 @@ export const JadwalView = ({ onNavigate }) => {
           ))}
         </div>
 
-        {/* 24-Hour Timetable Matrix */}
-        <div className="flex-1 overflow-auto max-h-[700px] divide-y divide-white/5">
-          {/* Table Header Row (Days of the week) */}
-          <div className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md border-b border-white/10 flex text-xs font-semibold">
+        {/* Continuous 24-Hour Timetable Grid */}
+        <div className="flex-1 overflow-auto max-h-[750px] relative">
+          {/* Table Header Row (Sticky top Days of the week) */}
+          <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md border-b border-white/10 flex text-xs font-semibold">
             {/* Time column header */}
             <div className="w-16 sm:w-20 p-2.5 text-center text-slate-500 border-r border-white/10 shrink-0 font-mono text-[11px]">
               Jam
@@ -989,213 +1266,99 @@ export const JadwalView = ({ onNavigate }) => {
             </div>
           </div>
 
-          {/* Table Body: 24 Hourly Rows */}
-          {displayedHours.map((hourStr) => (
-            <div key={hourStr} className="flex min-h-[58px] hover:bg-white/[0.01] transition-colors group/row">
-              {/* Hour Label */}
-              <div className="w-16 sm:w-20 p-2 text-center text-slate-400 font-mono text-xs border-r border-white/10 shrink-0 flex flex-col justify-start pt-2">
-                <span>{hourStr}</span>
-              </div>
+          {/* Table Body: Timetable Area with Time Gutter on the left and Day Columns */}
+          <div className="flex relative" style={{ minHeight: `${displayedHours.length * 64}px` }}>
+            {/* Left Time Gutter */}
+            <div className="w-16 sm:w-20 border-r border-white/10 shrink-0 bg-slate-950/40 divide-y divide-white/5 font-mono text-xs text-slate-400 select-none">
+              {displayedHours.map((hourStr) => (
+                <div
+                  key={hourStr}
+                  className="h-[64px] p-2 text-center flex flex-col justify-start pt-2 hover:text-white transition-colors"
+                >
+                  <span>{hourStr}</span>
+                </div>
+              ))}
+            </div>
 
-              {/* Desktop 7 Columns for this hour */}
-              <div className="hidden lg:grid grid-cols-7 flex-1 divide-x divide-white/5">
-                {currentWeekDays.map((day) => {
-                  const cellKey = `${day.isoDate}_${hourStr}`;
-                  const items = scheduleMatrix[cellKey] || [];
+            {/* Desktop: 7 Day Columns */}
+            <div className="hidden lg:grid grid-cols-7 flex-1 divide-x divide-white/5 relative">
+              {currentWeekDays.map((day) => {
+                const dayPositionedEvents = positionedEventsByDay[day.isoDate] || [];
 
-                  return (
-                    <div
-                      key={cellKey}
-                      onClick={() => handleOpenAddModal(day.isoDate, hourStr)}
-                      className={`p-1.5 cursor-pointer relative transition-colors hover:bg-white/5 group/cell ${
-                        day.isToday ? 'bg-emerald-500/[0.02]' : ''
-                      }`}
-                    >
-                      {/* Plus icon on hover */}
-                      <div className="absolute top-1 right-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
-                        <Plus className="w-3.5 h-3.5 text-slate-500 hover:text-emerald-400" />
-                      </div>
-
-                      {/* Scheduled Items in this hour */}
-                      <div className="space-y-1.5">
-                        {items.map((item) => {
-                          const isCustom = item.type === 'custom';
-                          const colorObj =
-                            SCHEDULE_COLORS.find((c) => c.id === item.color) || SCHEDULE_COLORS[0];
-
-                          return (
-                            <div
-                              key={item.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (item.type === 'task') {
-                                  setEditingTask(item.raw);
-                                  setIsTaskModalOpen(true);
-                                }
-                              }}
-                              className={`p-2 rounded-xl border text-xs transition-all shadow-sm group/item relative ${
-                                item.is_completed
-                                  ? 'bg-slate-900/60 border-white/5 opacity-50'
-                                  : isCustom
-                                  ? `${colorObj.bg} ${colorObj.border} ${colorObj.text}`
-                                  : 'bg-blue-600/20 border-blue-500/30 text-blue-200'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-1">
-                                <div className="flex items-start space-x-1.5 flex-1 min-w-0">
-                                  {/* Toggle Checkbox */}
-                                  <button
-                                    onClick={(e) => handleToggleDone(item, e)}
-                                    className={`mt-0.5 shrink-0 transition-transform active:scale-90 ${
-                                      item.is_completed
-                                        ? 'text-emerald-400'
-                                        : 'text-slate-400 hover:text-emerald-400'
-                                    }`}
-                                  >
-                                    {item.is_completed ? (
-                                      <CheckCircle2 className="w-3.5 h-3.5 fill-emerald-500/20" />
-                                    ) : (
-                                      <Circle className="w-3.5 h-3.5" />
-                                    )}
-                                  </button>
-
-                                  <div className="min-w-0 flex-1">
-                                    <h4
-                                      className={`font-semibold leading-tight truncate ${
-                                        item.is_completed ? 'line-through text-slate-500' : ''
-                                      }`}
-                                    >
-                                      {item.title}
-                                    </h4>
-                                    <div className="flex items-center space-x-1 mt-0.5 text-[10px] text-slate-400">
-                                      <span>
-                                        {item.start_time}
-                                        {item.end_time ? ` - ${item.end_time}` : ''}
-                                      </span>
-                                      {item.board_name && (
-                                        <>
-                                          <span>•</span>
-                                          <span className="text-blue-300 truncate max-w-[70px]">
-                                            {item.board_name}
-                                          </span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center space-x-1">
-                                  {/* Route to Proyek Button (if task) */}
-                                  {item.type === 'task' && onNavigate && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onNavigate('schedule');
-                                      }}
-                                      className="opacity-0 group-hover/item:opacity-100 p-0.5 text-blue-400 hover:text-blue-200 transition-opacity"
-                                      title="Buka Halaman Proyek / Task"
-                                    >
-                                      <ExternalLink className="w-3 h-3" />
-                                    </button>
-                                  )}
-
-                                  {/* Delete Item Button */}
-                                  <button
-                                    onClick={(e) => handleDeleteScheduleItem(item, e)}
-                                    className="opacity-0 group-hover/item:opacity-100 p-0.5 text-slate-400 hover:text-rose-400 transition-opacity"
-                                    title="Hapus Jadwal"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Mobile Single Column for Active Day */}
-              <div
-                onClick={() =>
-                  handleOpenAddModal(
-                    currentWeekDays[mobileSelectedDayIndex || 0]?.isoDate,
-                    hourStr
-                  )
-                }
-                className="lg:hidden flex-1 p-2 cursor-pointer relative hover:bg-white/5"
-              >
-                {(() => {
-                  const activeDay = currentWeekDays[mobileSelectedDayIndex || 0];
-                  if (!activeDay) return null;
-                  const cellKey = `${activeDay.isoDate}_${hourStr}`;
-                  const items = scheduleMatrix[cellKey] || [];
-
-                  return (
-                    <div className="space-y-1.5">
-                      {items.map((item) => (
+                return (
+                  <div
+                    key={day.isoDate}
+                    className={`relative ${day.isToday ? 'bg-emerald-500/[0.015]' : ''}`}
+                    style={{ height: `${displayedHours.length * 64}px` }}
+                  >
+                    {/* Background Hourly Clickable Grid */}
+                    <div className="absolute inset-0 divide-y divide-white/5">
+                      {displayedHours.map((hourStr) => (
                         <div
-                          key={item.id}
-                          className="p-2.5 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-between text-xs"
+                          key={hourStr}
+                          onClick={() => handleOpenAddModal(day.isoDate, hourStr)}
+                          className="h-[64px] relative cursor-pointer hover:bg-white/[0.03] group/slot transition-colors"
+                          title={`Klik untuk tambah jadwal ${day.dayName} jam ${hourStr}`}
                         >
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={(e) => handleToggleDone(item, e)}
-                              className="text-emerald-400"
-                            >
-                              {item.is_completed ? (
-                                <CheckCircle2 className="w-4 h-4" />
-                              ) : (
-                                <Circle className="w-4 h-4" />
-                              )}
-                            </button>
-                            <div>
-                              <div
-                                className={`font-semibold ${
-                                  item.is_completed ? 'line-through text-slate-500' : 'text-white'
-                                }`}
-                              >
-                                {item.title}
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                {item.start_time} - {item.end_time || 'Selesai'} {item.board_name ? `• ${item.board_name}` : ''}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center space-x-1">
-                            {item.type === 'task' && onNavigate && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onNavigate('schedule');
-                                }}
-                                className="p-1 text-blue-400 hover:text-blue-200"
-                                title="Buka di Proyek / Task"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            <button
-                              onClick={(e) => handleDeleteScheduleItem(item, e)}
-                              className="p-1 text-slate-500 hover:text-rose-400"
-                              title="Hapus Jadwal"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                          <div className="absolute top-1.5 right-1.5 opacity-0 group-hover/slot:opacity-100 transition-opacity z-10">
+                            <span className="p-1 rounded-md bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-[10px] flex items-center space-x-1">
+                              <Plus className="w-3 h-3" />
+                              <span>{hourStr}</span>
+                            </span>
                           </div>
                         </div>
                       ))}
                     </div>
-                  );
-                })()}
-              </div>
+
+                    {/* Events Layer: Absolutely positioned & continuous multi-hour spanning */}
+                    <div className="absolute inset-0 pointer-events-none p-1">
+                      {dayPositionedEvents.map((item) => renderEventCard(item, day))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
+
+            {/* Mobile: 1 Active Selected Day Column */}
+            <div className="lg:hidden flex-1 relative">
+              {(() => {
+                const activeDay = currentWeekDays[mobileSelectedDayIndex || 0];
+                if (!activeDay) return null;
+                const dayPositionedEvents = positionedEventsByDay[activeDay.isoDate] || [];
+
+                return (
+                  <div
+                    className="relative"
+                    style={{ height: `${displayedHours.length * 64}px` }}
+                  >
+                    {/* Background Hourly Clickable Grid */}
+                    <div className="absolute inset-0 divide-y divide-white/5">
+                      {displayedHours.map((hourStr) => (
+                        <div
+                          key={hourStr}
+                          onClick={() => handleOpenAddModal(activeDay.isoDate, hourStr)}
+                          className="h-[64px] relative cursor-pointer hover:bg-white/[0.03] group/slot transition-colors"
+                          title={`Klik untuk tambah jadwal jam ${hourStr}`}
+                        >
+                          <div className="absolute top-1.5 right-1.5 opacity-0 group-hover/slot:opacity-100 transition-opacity z-10">
+                            <span className="p-1 rounded-md bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-[10px] flex items-center space-x-1">
+                              <Plus className="w-3 h-3" />
+                              <span>{hourStr}</span>
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Events Layer */}
+                    <div className="absolute inset-0 pointer-events-none p-1">
+                      {dayPositionedEvents.map((item) => renderEventCard(item, activeDay))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1425,7 +1588,16 @@ export const JadwalView = ({ onNavigate }) => {
                   </label>
                   <select
                     value={scheduleStartTime}
-                    onChange={(e) => setScheduleStartTime(e.target.value)}
+                    onChange={(e) => {
+                      const newStart = e.target.value;
+                      setScheduleStartTime(newStart);
+                      const [sh] = newStart.split(':').map(Number);
+                      const [eh] = scheduleEndTime.split(':').map(Number);
+                      if (eh <= sh) {
+                        const nextH = (sh + 1) % 24;
+                        setScheduleEndTime(`${String(nextH).padStart(2, '0')}:00`);
+                      }
+                    }}
                     className="w-full px-2.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-mono"
                   >
                     {HOURS_24.map((h) => (
