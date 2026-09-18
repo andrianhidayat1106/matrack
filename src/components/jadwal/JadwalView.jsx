@@ -886,12 +886,14 @@ export const JadwalView = ({ onNavigate }) => {
     const isCustom = item.type === 'custom';
     const colorObj =
       SCHEDULE_COLORS.find((c) => c.id === item.color) || SCHEDULE_COLORS[0];
-    const isTallCard = item.height >= 90;
+    const isNarrow = (item.totalCols || 1) >= 3;
+    const isTallCard = isNarrow ? item.height >= 120 : item.height >= 90;
     const isBeingDragged = dragState && String(dragState.item.id) === String(item.id);
 
     return (
       <div
         key={item.id}
+        title={`${item.title} (${item.start_time} - ${item.end_time || ''})`}
         style={{
           position: 'absolute',
           top: `${item.top}px`,
@@ -908,7 +910,9 @@ export const JadwalView = ({ onNavigate }) => {
           }
           handleOpenEditScheduleModal(item);
         }}
-        className={`pointer-events-auto p-2 rounded-2xl border text-xs transition-shadow shadow-md group/item overflow-hidden flex flex-col justify-between cursor-pointer select-none ${
+        className={`pointer-events-auto rounded-2xl border transition-all shadow-md group/item overflow-hidden flex flex-col justify-between cursor-pointer select-none relative ${
+          isNarrow ? 'p-1.5' : 'p-2'
+        } ${
           isBeingDragged
             ? 'ring-2 ring-emerald-400 shadow-2xl scale-[1.01] bg-slate-900 border-emerald-400'
             : item.is_completed
@@ -918,13 +922,51 @@ export const JadwalView = ({ onNavigate }) => {
             : 'bg-blue-600/25 border-blue-500/40 text-blue-100 backdrop-blur-md hover:border-blue-400'
         }`}
       >
-        {/* Top bar: Checkbox + Title + Actions (with Drag Move trigger) */}
+        {/* Floating Quick Actions on Hover (Absolute so they NEVER squeeze or crowd the task title) */}
+        <div className="absolute top-1 right-1 z-30 flex items-center space-x-0.5 bg-slate-950/90 backdrop-blur-md rounded-lg p-0.5 border border-white/15 opacity-0 group-hover/item:opacity-100 transition-opacity shadow-lg">
+          {/* Quick add another task at the same hour */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenAddModal(day.isoDate, item.start_time);
+            }}
+            className="p-1 rounded-md hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 transition-colors"
+            title="Tambah task lain di jam yang sama"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+
+          {/* Route to Proyek Button (if task) */}
+          {item.type === 'task' && onNavigate && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigate('schedule');
+              }}
+              className="p-1 rounded-md hover:bg-blue-500/20 text-blue-300 hover:text-white transition-colors"
+              title="Buka Halaman Proyek di Kanban"
+            >
+              <ExternalLink className="w-3 h-3" />
+            </button>
+          )}
+
+          {/* Delete Item Button */}
+          <button
+            onClick={(e) => handleDeleteScheduleItem(item, e)}
+            className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 transition-colors"
+            title="Hapus Jadwal"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+
+        {/* Top Header Section: Drag handle + Title Priority + Checkbox */}
         <div
           onMouseDown={(e) => handleStartMove(item, day, e)}
           onTouchStart={(e) => handleStartMove(item, day, e)}
-          className="flex items-start justify-between gap-1.5 cursor-grab active:cursor-grabbing"
+          className="cursor-grab active:cursor-grabbing min-w-0 flex-1 flex flex-col"
         >
-          <div className="flex items-start space-x-1.5 flex-1 min-w-0">
+          <div className="flex items-start gap-1 sm:gap-1.5 min-w-0">
             {/* Toggle Checkbox */}
             <button
               onClick={(e) => handleToggleDone(item, e)}
@@ -936,85 +978,48 @@ export const JadwalView = ({ onNavigate }) => {
               title={item.is_completed ? 'Tandai Belum Selesai' : 'Tandai Selesai'}
             >
               {item.is_completed ? (
-                <CheckCircle2 className="w-3.5 h-3.5 fill-emerald-500/20" />
+                <CheckCircle2 className={`${isNarrow ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill-emerald-500/20`} />
               ) : (
-                <Circle className="w-3.5 h-3.5" />
+                <Circle className={`${isNarrow ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} />
               )}
             </button>
 
+            {/* Prioritized Task Title Container */}
             <div className="min-w-0 flex-1">
               <h4
-                className={`font-bold leading-snug break-words line-clamp-2 ${
-                  item.is_completed ? 'line-through text-slate-500' : 'text-white'
-                }`}
+                className={`font-bold leading-tight break-words ${
+                  isNarrow ? 'text-[11px] line-clamp-3' : 'text-xs leading-snug line-clamp-2'
+                } ${item.is_completed ? 'line-through text-slate-500' : 'text-white'}`}
               >
                 {item.title}
               </h4>
 
-              {/* Time & Duration badge */}
-              <div className="flex flex-wrap items-center gap-1 mt-0.5 text-[10px] text-slate-300 font-mono">
-                <span className="font-semibold text-emerald-300">
-                  {item.start_time} - {item.end_time || ''}
+              {/* Time & Duration badge - subtle under title */}
+              <div className="flex flex-wrap items-center gap-1 mt-0.5 text-[9px] sm:text-[10px] text-slate-300 font-mono">
+                <span className="font-semibold text-emerald-300 truncate">
+                  {isNarrow ? item.start_time : `${item.start_time} - ${item.end_time || ''}`}
                 </span>
-                {item.rawDurationHours > 1 && (
-                  <span className="px-1 py-0.2 rounded bg-white/10 text-[9px] text-slate-300">
+                {!isNarrow && item.rawDurationHours > 1 && (
+                  <span className="px-1 py-0.2 rounded bg-white/10 text-[9px] text-slate-300 shrink-0">
                     {item.rawDurationHours} Jam
                   </span>
                 )}
               </div>
             </div>
           </div>
-
-          {/* Action buttons on top right */}
-          <div className="flex items-center space-x-0.5 shrink-0">
-            {/* Quick add another task at the same hour */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenAddModal(day.isoDate, item.start_time);
-              }}
-              className="p-1 rounded-md hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-300 transition-colors opacity-0 group-hover/item:opacity-100"
-              title="Tambah task lain di jam yang sama"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-
-            {/* Route to Proyek Button (if task) */}
-            {item.type === 'task' && onNavigate && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNavigate('schedule');
-                }}
-                className="p-1 rounded-md hover:bg-blue-500/20 text-blue-300 hover:text-white transition-colors"
-                title="Buka Halaman Proyek di Kanban"
-              >
-                <ExternalLink className="w-3 h-3" />
-              </button>
-            )}
-
-            {/* Delete Item Button */}
-            <button
-              onClick={(e) => handleDeleteScheduleItem(item, e)}
-              className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 transition-colors opacity-0 group-hover/item:opacity-100"
-              title="Hapus Jadwal"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
-          </div>
         </div>
 
         {/* Tall Card Extended Content (Notes / Board Name) */}
         {isTallCard && (
-          <div className="mt-1 pb-2 text-[11px] space-y-1">
+          <div className="mt-1 pb-2 text-[10px] sm:text-[11px] space-y-0.5">
             {item.board_name && (
-              <div className="flex items-center space-x-1 text-blue-300">
-                <Layers className="w-3 h-3 shrink-0" />
+              <div className="flex items-center space-x-1 text-blue-300 truncate">
+                <Layers className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0" />
                 <span className="truncate font-medium">{item.board_name}</span>
               </div>
             )}
             {item.notes && (
-              <p className="text-slate-300 text-[10px] line-clamp-1 italic bg-black/20 px-1.5 py-0.5 rounded">
+              <p className="text-slate-300 text-[9px] sm:text-[10px] line-clamp-1 italic bg-black/20 px-1 py-0.5 rounded">
                 "{item.notes}"
               </p>
             )}
@@ -1035,7 +1040,7 @@ export const JadwalView = ({ onNavigate }) => {
           className="absolute bottom-0 inset-x-0 h-3.5 cursor-ns-resize flex items-center justify-center group/handle hover:bg-white/20 transition-colors z-20 rounded-b-2xl bg-white/[0.04]"
           title="Tarik ke bawah / atas untuk ubah jam selesai & durasi"
         >
-          <div className="w-8 h-1 rounded-full bg-white/40 group-hover/handle:bg-white transition-all group-hover/handle:w-12 shadow-sm" />
+          <div className={`${isNarrow ? 'w-5 h-0.5' : 'w-8 h-1'} rounded-full bg-white/40 group-hover/handle:bg-white transition-all group-hover/handle:w-10 shadow-sm`} />
         </div>
       </div>
     );
