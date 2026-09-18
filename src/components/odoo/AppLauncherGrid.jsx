@@ -39,8 +39,19 @@ export const AppLauncherGrid = ({ onOpenApp }) => {
       hotkey: 'N',
     },
     {
+      id: 'jadwal',
+      name: 'Jadwal',
+      subtitle: 'Jadwal Mingguan & Kotak Usia 365 Hari',
+      icon: Calendar,
+      gradient: 'from-emerald-500 to-teal-600',
+      badgeText: 'Mingguan & Kotak Usia',
+      badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      description: 'Tampilan agenda per minggu, checklist jadwal tugas harian, dan kotak-kotak GitHub menghitung mundur hari menuju umur berikutnya.',
+      hotkey: 'J',
+    },
+    {
       id: 'schedule',
-      name: 'Schedule',
+      name: 'Proyek',
       subtitle: 'Obsidian Brain Graph & Kanban Boards',
       icon: Network,
       gradient: 'from-blue-600 to-cyan-500',
@@ -140,7 +151,7 @@ export const AppLauncherGrid = ({ onOpenApp }) => {
         </div>
 
         {/* Odoo App Grid (Main Navigation Tiles) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 pt-2 sm:pt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 pt-2 sm:pt-4">
           {filteredApps.map((app) => {
             const Icon = app.icon;
             return (

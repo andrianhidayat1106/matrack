@@ -212,6 +212,75 @@ export const getNotes = async (userId, { filter = 'all', folder = 'all', search 
   return { notes: filtered, folders: distinctFolders };
 };
 
+/**
+ * Automatically sync and associate existing notes with projects by name.
+ * If a note's title or folder matches a project's name, update its folder to that project.
+ */
+export const syncNotesWithProjects = async (userId, boards = [], notes = []) => {
+  if (!userId || !boards || boards.length === 0 || !notes || notes.length === 0) {
+    return notes;
+  }
+
+  const projectNames = boards.map((b) => b.name?.trim()).filter(Boolean);
+  if (projectNames.length === 0) return notes;
+
+  let hasUpdates = false;
+  const updatedNotes = [...notes];
+
+  for (let i = 0; i < updatedNotes.length; i++) {
+    const note = updatedNotes[i];
+    if (note.is_trash) continue;
+
+    const currentFolder = (note.folder || '').trim().toLowerCase();
+    const currentTitle = (note.title || '').trim().toLowerCase();
+
+    // Check if note already matches an exact project name
+    const alreadyMatches = projectNames.some((pName) => pName.toLowerCase() === currentFolder);
+
+    if (!alreadyMatches) {
+      // Find matching project by name match in title, folder, or project name matching title
+      const matchedProject = projectNames.find((pName) => {
+        const pLower = pName.toLowerCase();
+        return (
+          currentFolder === pLower ||
+          currentTitle === pLower ||
+          currentTitle.includes(pLower) ||
+          pLower.includes(currentTitle)
+        );
+      });
+
+      if (matchedProject) {
+        hasUpdates = true;
+        updatedNotes[i] = { ...note, folder: matchedProject };
+        // Update in Supabase asynchronously
+        try {
+          supabase
+            .from('notes')
+            .update({ folder: matchedProject, updated_at: new Date().toISOString() })
+            .eq('id', note.id)
+            .then();
+        } catch {}
+      }
+    }
+  }
+
+  if (hasUpdates) {
+    const notesKey = `notes_${userId}`;
+    setLocalData(notesKey, updatedNotes);
+  }
+
+  return updatedNotes;
+};
+
+/**
+ * Get all notes belonging to a specific project
+ */
+export const getNotesForProject = async (userId, projectName) => {
+  if (!userId || !projectName) return [];
+  const { notes } = await getNotes(userId, { filter: 'all', folder: projectName });
+  return notes.filter((n) => !n.is_trash && n.folder?.toLowerCase() === projectName.toLowerCase());
+};
+
 export const createNote = async (userId, noteData) => {
   const notesKey = `notes_${userId}`;
   const payload = {

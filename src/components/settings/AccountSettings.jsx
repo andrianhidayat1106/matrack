@@ -14,7 +14,8 @@ import {
   Copy,
   Sparkles,
   Key,
-  Save
+  Save,
+  Cake
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase, getSupabaseConfig } from '../../services/supabase';
@@ -24,6 +25,7 @@ export const AccountSettings = () => {
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
+  const [birthDate, setBirthDate] = useState(user?.birth_date || localStorage.getItem('matrack_bday_' + user?.id) || '');
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -40,12 +42,15 @@ export const AccountSettings = () => {
     setSaving(true);
     setFeedback(null);
     try {
-      const payload = { name, email };
+      const payload = { name, email, birth_date: birthDate };
       if (password.trim()) {
         payload.password = password;
       }
+      if (birthDate) {
+        localStorage.setItem('matrack_bday_' + user?.id, birthDate);
+      }
       await updateProfile(payload);
-      setFeedback({ type: 'success', message: 'Profile updated successfully!' });
+      setFeedback({ type: 'success', message: 'Profil dan tanggal lahir berhasil diperbarui!' });
       setPassword('');
     } catch (err) {
       setFeedback({
@@ -150,6 +155,19 @@ export const AccountSettings = () => {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center space-x-1.5">
+                    <Cake className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Tanggal Lahir (Untuk Kotak Usia 365 Hari)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 cursor-pointer"
                   />
                 </div>
 

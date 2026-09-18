@@ -47,6 +47,7 @@ export const AuthProvider = ({ children }) => {
               id: data.session.user.id,
               email: data.session.user.email,
               name: data.session.user.user_metadata?.name || data.session.user.email.split('@')[0],
+              birth_date: data.session.user.user_metadata?.birth_date || null,
               permanent: true,
             };
             setUser(authUser);
@@ -88,6 +89,7 @@ export const AuthProvider = ({ children }) => {
           id: newSession.user.id,
           email: newSession.user.email,
           name: newSession.user.user_metadata?.name || newSession.user.email.split('@')[0],
+          birth_date: newSession.user.user_metadata?.birth_date || user?.birth_date || null,
           permanent: true,
         };
         setUser(authUser);
@@ -191,10 +193,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const updateProfile = async ({ name, email, password }) => {
+  const updateProfile = async ({ name, email, password, birth_date }) => {
     if (session?.user) {
-      const updates = {};
-      if (name) updates.data = { name };
+      const updates = { data: {} };
+      if (name) updates.data.name = name;
+      if (birth_date !== undefined) updates.data.birth_date = birth_date;
       if (email) updates.email = email;
       if (password) updates.password = password;
 
@@ -207,6 +210,7 @@ export const AuthProvider = ({ children }) => {
       ...user,
       name: name || user?.name,
       email: email || user?.email,
+      birth_date: birth_date !== undefined ? birth_date : user?.birth_date,
       permanent: true,
     };
     setUser(updatedUser);

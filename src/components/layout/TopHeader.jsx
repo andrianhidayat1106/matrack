@@ -9,7 +9,8 @@ import {
   ChevronDown, 
   Database,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Calendar
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { MatrackLogo } from '../common/MatrackLogo';
@@ -33,8 +34,10 @@ export const TopHeader = ({ currentView, onNavigate }) => {
     switch (currentView) {
       case 'notes':
         return { name: 'Apple Notes', icon: FileText, color: 'text-amber-400' };
+      case 'jadwal':
+        return { name: 'Jadwal & Kotak Usia', icon: Calendar, color: 'text-emerald-400' };
       case 'schedule':
-        return { name: 'Kanban Schedule', icon: Kanban, color: 'text-blue-400' };
+        return { name: 'Proyek (Mind Map & Kanban)', icon: Kanban, color: 'text-blue-400' };
       case 'settings':
         return { name: 'Settings & Supabase', icon: Settings, color: 'text-purple-400' };
       default:
@@ -100,6 +103,17 @@ export const TopHeader = ({ currentView, onNavigate }) => {
               <span>Notes</span>
             </button>
             <button
+              onClick={() => onNavigate('jadwal')}
+              className={`px-3 py-1 text-xs rounded-md font-medium transition-all flex items-center space-x-1.5 ${
+                currentView === 'jadwal'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Jadwal</span>
+            </button>
+            <button
               onClick={() => onNavigate('schedule')}
               className={`px-3 py-1 text-xs rounded-md font-medium transition-all flex items-center space-x-1.5 ${
                 currentView === 'schedule'
@@ -108,7 +122,7 @@ export const TopHeader = ({ currentView, onNavigate }) => {
               }`}
             >
               <Kanban className="w-3.5 h-3.5" />
-              <span>Schedule</span>
+              <span>Proyek</span>
             </button>
           </div>
         )}
@@ -158,6 +172,26 @@ export const TopHeader = ({ currentView, onNavigate }) => {
               </div>
 
               <div className="py-1">
+                <button
+                  onClick={() => {
+                    onNavigate('jadwal');
+                    setDropdownOpen(false);
+                  }}
+                  className="w-full flex items-center space-x-2.5 px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                >
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                  <span>Jadwal & Kotak Usia</span>
+                </button>
+                <button
+                  onClick={() => {
+                    onNavigate('schedule');
+                    setDropdownOpen(false);
+                  }}
+                  className="w-full flex items-center space-x-2.5 px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                >
+                  <Kanban className="w-4 h-4 text-blue-400" />
+                  <span>Proyek & Kanban</span>
+                </button>
                 <button
                   onClick={() => {
                     onNavigate('settings');
@@ -231,6 +265,18 @@ export const TopHeader = ({ currentView, onNavigate }) => {
         </button>
 
         <button
+          onClick={() => onNavigate('jadwal')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all relative ${
+            currentView === 'jadwal'
+              ? 'text-emerald-400 font-bold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Calendar className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Jadwal</span>
+        </button>
+
+        <button
           onClick={() => onNavigate('schedule')}
           className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all relative ${
             currentView === 'schedule'
@@ -239,7 +285,7 @@ export const TopHeader = ({ currentView, onNavigate }) => {
           }`}
         >
           <Kanban className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">Schedule</span>
+          <span className="text-[10px]">Proyek</span>
           {stats?.tasks_pending > 0 && (
             <span className="absolute top-0.5 right-1/4 w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-extrabold flex items-center justify-center">
               {stats.tasks_pending > 99 ? '99+' : stats.tasks_pending}

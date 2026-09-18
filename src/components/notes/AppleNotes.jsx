@@ -29,7 +29,8 @@ import {
   Heading2,
   Share2,
   Copy,
-  Check
+  Check,
+  Layers
 } from 'lucide-react';
 import { 
   getNotes, 
@@ -38,7 +39,9 @@ import {
   togglePinNote, 
   deleteNote, 
   restoreNote,
-  saveCustomFolder 
+  saveCustomFolder,
+  getBoards,
+  syncNotesWithProjects
 } from '../../services/db';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -46,6 +49,7 @@ import { useAuth } from '../../context/AuthContext';
 export const AppleNotes = () => {
   const { user, refreshUserStats } = useAuth();
   const [notes, setNotes] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [folders, setFolders] = useState(['Notes']);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'pinned', 'archived', 'trash'
   const [activeFolder, setActiveFolder] = useState('all');
@@ -67,26 +71,35 @@ export const AppleNotes = () => {
 
   const saveTimeoutRef = useRef(null);
 
-  // Fetch notes
+  // Fetch notes & sync with projects
   const fetchNotes = async (selectFirst = false, showSpinner = true) => {
     if (!user?.id) return;
     try {
       if (showSpinner) setLoading(true);
-      const res = await getNotes(user.id, {
-        filter: activeFilter,
-        folder: activeFolder,
-        search: searchQuery,
-      });
+      const [res, boardsData] = await Promise.all([
+        getNotes(user.id, {
+          filter: activeFilter,
+          folder: activeFolder,
+          search: searchQuery,
+        }),
+        getBoards(user.id),
+      ]);
 
-      setNotes(res.notes || []);
+      const loadedBoards = boardsData || [];
+      setProjects(loadedBoards);
+
+      // Auto-match notes that correspond to project names
+      const synced = await syncNotesWithProjects(user.id, loadedBoards, res.notes || []);
+      setNotes(synced || []);
+
       if (res.folders && res.folders.length > 0) {
         const unique = Array.from(new Set(['Notes', ...res.folders]));
         setFolders(unique);
       }
 
-      if (selectFirst && res.notes && res.notes.length > 0) {
-        selectNote(res.notes[0], false);
-      } else if (res.notes && res.notes.length === 0) {
+      if (selectFirst && synced && synced.length > 0) {
+        selectNote(synced[0], false);
+      } else if (synced && synced.length === 0) {
         setSelectedNoteId(null);
         setEditorTitle('');
         setEditorContent('');
@@ -398,6 +411,55 @@ export const AppleNotes = () => {
             </button>
           </nav>
 
+          {/* Projects Section */}
+          {projects.length > 0 && (
+            <div className="pt-3 border-t border-white/10">
+              <div className="flex items-center justify-between px-2 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-400 flex items-center space-x-1.5">
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Catatan Proyek</span>
+                </span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-300 font-semibold">
+                  {projects.length}
+                </span>
+              </div>
+
+              <div className="space-y-0.5">
+                {projects.map((p) => {
+                  const pNotesCount = notes.filter(
+                    (n) => !n.is_trash && (n.folder || '').toLowerCase() === p.name.toLowerCase()
+                  ).length;
+                  const isActive = activeFolder === p.name && activeFilter === 'all';
+
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        setActiveFilter('all');
+                        setActiveFolder(p.name);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs transition-colors ${
+                        isActive
+                          ? 'bg-blue-600/25 text-blue-300 font-semibold border border-blue-500/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2 truncate">
+                        <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+                        <span className="truncate">{p.name}</span>
+                      </div>
+                      {pNotesCount > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 text-slate-400 font-mono">
+                          {pNotesCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Folders Section */}
           <div className="pt-3 border-t border-white/10">
             <div className="flex items-center justify-between px-2 mb-2">
@@ -414,25 +476,27 @@ export const AppleNotes = () => {
             </div>
 
             <div className="space-y-0.5">
-              {folders.map((f) => (
-                <button
-                  key={f}
-                  onClick={() => {
-                    setActiveFilter('all');
-                    setActiveFolder(f);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs transition-colors ${
-                    activeFolder === f && activeFilter === 'all'
-                      ? 'bg-white/10 text-white font-medium'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2 truncate">
-                    <Folder className="w-3.5 h-3.5 text-amber-400/80 shrink-0" />
-                    <span className="truncate">{f}</span>
-                  </div>
-                </button>
-              ))}
+              {folders
+                .filter((f) => !projects.some((p) => p.name.toLowerCase() === f.toLowerCase()))
+                .map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => {
+                      setActiveFilter('all');
+                      setActiveFolder(f);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs transition-colors ${
+                      activeFolder === f && activeFilter === 'all'
+                        ? 'bg-white/10 text-white font-medium'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2 truncate">
+                      <Folder className="w-3.5 h-3.5 text-amber-400/80 shrink-0" />
+                      <span className="truncate">{f}</span>
+                    </div>
+                  </button>
+                ))}
             </div>
           </div>
         </div>
@@ -454,8 +518,13 @@ export const AppleNotes = () => {
         {/* Header & Search */}
         <div className="p-3 border-b border-white/10 space-y-2">
           <div className="flex items-center justify-between">
-            <h2 className="font-bold text-sm text-white">
-              {activeFilter === 'trash' ? 'Trash' : activeFilter === 'pinned' ? 'Pinned' : activeFolder === 'all' ? 'All Notes' : activeFolder}
+            <h2 className="font-bold text-sm text-white flex items-center space-x-2">
+              {projects.some((p) => p.name === activeFolder) && (
+                <span className="w-2 h-2 rounded-full bg-blue-400" />
+              )}
+              <span>
+                {activeFilter === 'trash' ? 'Trash' : activeFilter === 'pinned' ? 'Pinned' : activeFolder === 'all' ? 'All Notes' : activeFolder}
+              </span>
             </h2>
             <div className="flex items-center space-x-1">
               <button
@@ -468,7 +537,7 @@ export const AppleNotes = () => {
             </div>
           </div>
 
-          {/* Mobile Quick Folder / Filter Pills Carousel */}
+          {/* Mobile Quick Folder / Project / Filter Pills Carousel */}
           <div className="md:hidden flex items-center space-x-1.5 overflow-x-auto pb-1 pt-0.5 text-xs no-scrollbar">
             <button
               onClick={() => { setActiveFilter('all'); setActiveFolder('all'); }}
@@ -494,17 +563,31 @@ export const AppleNotes = () => {
             >
               🗑 Trash
             </button>
-            {folders.map(f => (
+            {projects.map((p) => (
               <button
-                key={f}
-                onClick={() => { setActiveFilter('all'); setActiveFolder(f); }}
-                className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
-                  activeFolder === f && activeFilter === 'all' ? 'bg-white/15 text-white font-bold' : 'bg-white/5 text-slate-400'
+                key={p.id}
+                onClick={() => { setActiveFilter('all'); setActiveFolder(p.name); }}
+                className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors flex items-center space-x-1 ${
+                  activeFolder === p.name && activeFilter === 'all' ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40 font-bold' : 'bg-white/5 text-slate-400'
                 }`}
               >
-                📁 {f}
+                <span>📂</span>
+                <span>{p.name}</span>
               </button>
             ))}
+            {folders
+              .filter((f) => !projects.some((p) => p.name.toLowerCase() === f.toLowerCase()))
+              .map((f) => (
+                <button
+                  key={f}
+                  onClick={() => { setActiveFilter('all'); setActiveFolder(f); }}
+                  className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                    activeFolder === f && activeFilter === 'all' ? 'bg-white/15 text-white font-bold' : 'bg-white/5 text-slate-400'
+                  }`}
+                >
+                  📁 {f}
+                </button>
+              ))}
             <button
               onClick={() => setShowNewFolderModal(true)}
               className="px-2.5 py-1 rounded-lg shrink-0 bg-white/5 text-slate-400 hover:text-white"
@@ -577,10 +660,17 @@ export const AppleNotes = () => {
                   </div>
 
                   <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1">
-                    <span className="flex items-center space-x-1">
-                      <Folder className="w-2.5 h-2.5" />
-                      <span>{note.folder || 'Notes'}</span>
-                    </span>
+                    {projects.some((p) => (p.name || '').toLowerCase() === (note.folder || '').toLowerCase()) ? (
+                      <span className="flex items-center space-x-1 px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-300 font-medium">
+                        <Layers className="w-2.5 h-2.5 text-blue-400" />
+                        <span className="truncate max-w-[120px]">{note.folder}</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center space-x-1">
+                        <Folder className="w-2.5 h-2.5" />
+                        <span>{note.folder || 'Notes'}</span>
+                      </span>
+                    )}
 
                     {/* Quick actions on hover */}
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
@@ -761,13 +851,26 @@ export const AppleNotes = () => {
                     setEditorFolder(e.target.value);
                     triggerAutoSave(editorTitle, editorContent, e.target.value);
                   }}
-                  className="bg-transparent text-slate-400 hover:text-slate-200 border-none focus:outline-none cursor-pointer"
+                  className="bg-transparent text-slate-400 hover:text-slate-200 border-none focus:outline-none cursor-pointer text-xs"
                 >
-                  {folders.map((f) => (
-                    <option key={f} value={f} className="bg-slate-900 text-white">
-                      📁 {f}
-                    </option>
-                  ))}
+                  {projects.length > 0 && (
+                    <optgroup label="📂 Catatan Proyek" className="bg-slate-900 text-blue-400 font-bold">
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.name} className="bg-slate-900 text-white">
+                          Proyek: {p.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="📁 Folder Umum" className="bg-slate-900 text-amber-400 font-bold">
+                    {folders
+                      .filter((f) => !projects.some((p) => p.name.toLowerCase() === f.toLowerCase()))
+                      .map((f) => (
+                        <option key={f} value={f} className="bg-slate-900 text-white">
+                          {f}
+                        </option>
+                      ))}
+                  </optgroup>
                 </select>
               </div>
 

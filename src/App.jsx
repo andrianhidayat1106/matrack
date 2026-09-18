@@ -3,13 +3,14 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { TopHeader } from './components/layout/TopHeader';
 import { AppLauncherGrid } from './components/odoo/AppLauncherGrid';
 import { AppleNotes } from './components/notes/AppleNotes';
+import { JadwalView } from './components/jadwal/JadwalView';
 import { ScheduleView } from './components/schedule/ScheduleView';
 import { AccountSettings } from './components/settings/AccountSettings';
 import { AuthModal } from './components/auth/AuthModal';
 
 const MainLayout = () => {
   const { user, loading } = useAuth();
-  const [currentView, setCurrentView] = useState('odoo'); // 'odoo', 'notes', 'schedule', 'settings'
+  const [currentView, setCurrentView] = useState('odoo'); // 'odoo', 'notes', 'jadwal', 'schedule', 'settings'
 
   // Keyboard shortcut listener for fast Odoo navigation
   useEffect(() => {
@@ -47,6 +48,7 @@ const MainLayout = () => {
           <AppLauncherGrid onOpenApp={(appId) => setCurrentView(appId)} />
         )}
         {currentView === 'notes' && <AppleNotes />}
+        {currentView === 'jadwal' && <JadwalView />}
         {currentView === 'schedule' && <ScheduleView />}
         {currentView === 'settings' && <AccountSettings />}
       </main>
