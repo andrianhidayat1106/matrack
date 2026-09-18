@@ -30,7 +30,14 @@ import { TaskModal } from '../kanban/TaskModal';
 
 export const ScheduleView = () => {
   const { user, refreshUserStats } = useAuth();
-  const [boards, setBoards] = useState([]);
+  const [boards, setBoards] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`matrack_boards_${user?.id}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(true);
 
   // View mode: 'graph' (Obsidian Brain Map) or 'kanban' (Trello Board)
@@ -288,7 +295,12 @@ export const ScheduleView = () => {
       {/* Main View Area: Obsidian Brain Graph OR Trello Kanban */}
       {/* ------------------------------------------------------------- */}
       <div className="flex-1 relative">
-        {viewMode === 'graph' ? (
+        {loading && boards.length === 0 ? (
+          <div className="flex flex-col items-center justify-center min-h-[420px] space-y-3">
+            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs text-slate-400 font-medium">Memuat Pemetaan Proyek & Jadwal...</span>
+          </div>
+        ) : viewMode === 'graph' ? (
           <ObsidianBrainGraph
             boards={boards}
             searchQuery={searchQuery}

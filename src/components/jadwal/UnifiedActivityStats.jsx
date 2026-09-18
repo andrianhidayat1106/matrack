@@ -98,19 +98,23 @@ export const UnifiedActivityStats = ({
         }
       }
 
+      const startTimeClean = (s.start_time || '00:00').substring(0, 5);
+      const parsedTime = new Date(`${s.date}T${startTimeClean}:00`);
+      const validTimestamp = isNaN(parsedTime.getTime()) ? new Date() : parsedTime;
+
       items.push({
         id: `sched-${s.id}`,
         rawId: s.id,
         feature: 'jadwal',
         featureName: 'Jadwal 24 Jam',
         featureColor: 'emerald',
-        title: s.title,
+        title: s.title || 'Aktivitas Jadwal',
         date: s.date,
         time: s.start_time ? `${s.start_time} - ${s.end_time || ''}` : 'Terjadwal',
         durationHours,
         is_completed: Boolean(s.is_completed),
         metadata: s.notes || (s.board_name ? `Proyek: ${s.board_name}` : 'Aktivitas'),
-        timestamp: new Date(`${s.date}T${s.start_time || '00:00'}:00`),
+        timestamp: validTimestamp,
       });
     });
 

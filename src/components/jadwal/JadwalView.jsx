@@ -52,10 +52,31 @@ export const JadwalView = ({ onNavigate }) => {
   // Collapsible toggle for Kotak Usia
   const [isAgeGridExpanded, setIsAgeGridExpanded] = useState(true);
 
-  // Boards, tasks & notes state
-  const [boards, setBoards] = useState([]);
-  const [customSchedules, setCustomSchedules] = useState([]);
-  const [notes, setNotes] = useState([]);
+  // Boards, tasks & notes state (cached for zero-lag instant display)
+  const [boards, setBoards] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`matrack_boards_${user?.id}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [customSchedules, setCustomSchedules] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`matrack_custom_schedules_${user?.id}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [notes, setNotes] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`matrack_notes_${user?.id}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('all');
 
   // Active Day for Mobile View
@@ -489,8 +510,8 @@ export const JadwalView = ({ onNavigate }) => {
   // Calculates top, height, widthPct, and leftPct for side-by-side overlapping multi-tasks
   const positionedEventsByDay = useMemo(() => {
     const HOUR_HEIGHT = 64;
-    const segmentStartHour = parseInt(displayedHours[0].split(':')[0], 10);
-    const segmentEndHour = parseInt(displayedHours[displayedHours.length - 1].split(':')[0], 10) + 1;
+    const segmentStartHour = displayedHours?.length > 0 ? parseInt(displayedHours[0].split(':')[0], 10) : 0;
+    const segmentEndHour = displayedHours?.length > 0 ? parseInt(displayedHours[displayedHours.length - 1].split(':')[0], 10) + 1 : 24;
 
     // Helper to convert time string "08:30" or "08:00" to decimal hour
     const toDecimal = (tStr, defaultVal = 9.0) => {

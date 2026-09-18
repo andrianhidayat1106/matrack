@@ -87,7 +87,7 @@ export const ObsidianBrainGraph = ({
     allProjects.forEach((board, bIdx) => {
       const bTasks = (board.columns || []).flatMap(c => c.tasks || []);
       const bDone = (board.columns || [])
-        .filter(c => c.name.toLowerCase().includes('selesai') || c.name.toLowerCase().includes('done'))
+        .filter(c => (c.name || '').toLowerCase().includes('selesai') || (c.name || '').toLowerCase().includes('done'))
         .flatMap(c => c.tasks || []);
       const bProgressPct = bTasks.length > 0 ? Math.round((bDone.length / bTasks.length) * 100) : 0;
 
@@ -116,7 +116,7 @@ export const ObsidianBrainGraph = ({
         id: `project-${board.id}`,
         type: 'project',
         data: board,
-        name: board.name,
+        name: board.name || 'Proyek Tanpa Nama',
         taskCount: bTasks.length,
         doneCount: bDone.length,
         progressPct: bProgressPct,
@@ -145,11 +145,11 @@ export const ObsidianBrainGraph = ({
       const taskAngleStep = (Math.PI * 2) / Math.max(bTasks.length, 1);
       bTasks.forEach((task, tIdx) => {
         const isDone = (board.columns || []).some(
-          c => (c.name.toLowerCase().includes('selesai') || c.name.toLowerCase().includes('done')) &&
+          c => ((c.name || '').toLowerCase().includes('selesai') || (c.name || '').toLowerCase().includes('done')) &&
                (c.tasks || []).some(t => t.id === task.id)
         );
         const isInProgress = (board.columns || []).some(
-          c => (c.name.toLowerCase().includes('masih') || c.name.toLowerCase().includes('progress')) &&
+          c => ((c.name || '').toLowerCase().includes('masih') || (c.name || '').toLowerCase().includes('progress')) &&
                (c.tasks || []).some(t => t.id === task.id)
         );
 
@@ -167,7 +167,7 @@ export const ObsidianBrainGraph = ({
           type: 'task',
           data: task,
           projectData: board,
-          name: task.title,
+          name: task.title || 'Tugas Baru',
           priority: task.priority || 'medium',
           isDone,
           isInProgress,
@@ -219,18 +219,33 @@ export const ObsidianBrainGraph = ({
   }, [hoveredNode]);
 
   const handleResetView = useCallback(() => {
-    if (!containerRef.current) return;
-    const { clientWidth, clientHeight } = containerRef.current;
+    const container = containerRef.current;
+    const width = container?.clientWidth || window.innerWidth;
+    const height = container?.clientHeight || (window.innerHeight - 120);
     cameraRef.current = {
-      x: clientWidth / 2,
-      y: clientHeight / 2,
-      scale: clientWidth < 640 ? 0.75 : 1
+      x: width / 2,
+      y: height / 2,
+      scale: width < 640 ? 0.75 : 1
     };
   }, []);
 
-  // Center the view on initial mount
+  // Center the view on initial mount and when container dimensions are measured
   useEffect(() => {
     handleResetView();
+    if (!containerRef.current || typeof ResizeObserver === 'undefined') return;
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          if (cameraRef.current.x === 0 && cameraRef.current.y === 0) {
+            cameraRef.current.x = entry.contentRect.width / 2;
+            cameraRef.current.y = entry.contentRect.height / 2;
+          }
+        }
+      }
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
   }, [handleResetView]);
 
   const handleZoom = (factor) => {
@@ -392,7 +407,7 @@ export const ObsidianBrainGraph = ({
         let matchSearch = true;
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
-          matchSearch = n.name.toLowerCase().includes(q);
+          matchSearch = (n.name || '').toLowerCase().includes(q);
         }
 
         let matchPriority = true;
@@ -510,14 +525,15 @@ export const ObsidianBrainGraph = ({
           ctx.fillStyle = '#ffffff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(n.name.substring(0, 3).toUpperCase(), n.x, n.y);
+          const projName = n.name || 'PRJ';
+          ctx.fillText(projName.substring(0, 3).toUpperCase(), n.x, n.y);
 
           // Project Title Label beneath node
           ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
           ctx.fillStyle = isHovered ? '#ffffff' : '#cbd5e1';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
-          ctx.fillText(n.name, n.x, n.y + n.radius + 7);
+          ctx.fillText(n.name || 'Proyek', n.x, n.y + n.radius + 7);
 
           // Progress pill label beneath title
           ctx.font = '500 9px -apple-system, BlinkMacSystemFont, sans-serif';
@@ -541,7 +557,8 @@ export const ObsidianBrainGraph = ({
             ctx.fillStyle = n.isDone ? '#6ee7b7' : isHovered ? '#ffffff' : '#94a3b8';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            const cleanTitle = n.name.length > 20 ? n.name.substring(0, 18) + '...' : n.name;
+            const rawTitle = n.name || 'Tugas';
+            const cleanTitle = rawTitle.length > 20 ? rawTitle.substring(0, 18) + '...' : rawTitle;
             ctx.fillText(cleanTitle, n.x, n.y + n.radius + 4);
           }
         }
