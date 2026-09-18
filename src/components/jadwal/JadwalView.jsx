@@ -506,12 +506,18 @@ export const JadwalView = ({ onNavigate }) => {
     }
   }, [timeSegmentFilter]);
 
+  const segmentStartHour = useMemo(() => {
+    return displayedHours?.length > 0 ? parseInt(displayedHours[0].split(':')[0], 10) : 0;
+  }, [displayedHours]);
+
+  const segmentEndHour = useMemo(() => {
+    return displayedHours?.length > 0 ? parseInt(displayedHours[displayedHours.length - 1].split(':')[0], 10) + 1 : 24;
+  }, [displayedHours]);
+
   // Combine Tasks & Custom Schedules into Continuous Multi-Hour Spanning Events
   // Calculates top, height, widthPct, and leftPct for side-by-side overlapping multi-tasks
   const positionedEventsByDay = useMemo(() => {
     const HOUR_HEIGHT = 64;
-    const segmentStartHour = displayedHours?.length > 0 ? parseInt(displayedHours[0].split(':')[0], 10) : 0;
-    const segmentEndHour = displayedHours?.length > 0 ? parseInt(displayedHours[displayedHours.length - 1].split(':')[0], 10) + 1 : 24;
 
     // Helper to convert time string "08:30" or "08:00" to decimal hour
     const toDecimal = (tStr, defaultVal = 9.0) => {
@@ -724,7 +730,7 @@ export const JadwalView = ({ onNavigate }) => {
     });
 
     return resultMap;
-  }, [displayedHours, currentWeekDays, customSchedules, allTasks, selectedProjectFilter, dragState]);
+  }, [segmentStartHour, segmentEndHour, currentWeekDays, customSchedules, allTasks, selectedProjectFilter, dragState]);
 
   // Open the 2-choice Add Modal prefilled for a given day and hour
   const handleOpenAddModal = (isoDate = null, hourStr = null) => {
