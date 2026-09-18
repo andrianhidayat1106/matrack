@@ -882,3 +882,49 @@ export const getUserStats = async (userId) => {
     tasks_pending: totalTasks - completedTasks,
   };
 };
+
+/* ==========================================================================
+   24-HOUR CUSTOM SCHEDULES (Aktivitas Bebas by Nama & Task Links)
+   ========================================================================== */
+
+export const getCustomSchedules = (userId) => {
+  if (!userId) return [];
+  const key = `custom_schedules_${userId}`;
+  return getLocalData(key, []);
+};
+
+export const saveCustomSchedule = (userId, scheduleItem) => {
+  if (!userId) return null;
+  const key = `custom_schedules_${userId}`;
+  const current = getLocalData(key, []);
+  const newItem = {
+    id: scheduleItem.id || 'sched-' + Date.now(),
+    user_id: String(userId),
+    title: scheduleItem.title,
+    date: scheduleItem.date, // YYYY-MM-DD
+    start_time: scheduleItem.start_time || '09:00', // HH:mm
+    end_time: scheduleItem.end_time || '10:00', // HH:mm
+    type: scheduleItem.type || 'custom', // 'custom' | 'task'
+    task_id: scheduleItem.task_id || null,
+    board_id: scheduleItem.board_id || null,
+    board_name: scheduleItem.board_name || '',
+    color: scheduleItem.color || 'emerald',
+    notes: scheduleItem.notes || '',
+    is_completed: Boolean(scheduleItem.is_completed),
+    created_at: new Date().toISOString(),
+  };
+
+  const updated = [newItem, ...current.filter((s) => String(s.id) !== String(newItem.id))];
+  setLocalData(key, updated);
+  return newItem;
+};
+
+export const deleteCustomSchedule = (userId, scheduleId) => {
+  if (!userId || !scheduleId) return false;
+  const key = `custom_schedules_${userId}`;
+  const current = getLocalData(key, []);
+  const updated = current.filter((s) => String(s.id) !== String(scheduleId));
+  setLocalData(key, updated);
+  return true;
+};
+

@@ -48,7 +48,7 @@ const MainLayout = () => {
           <AppLauncherGrid onOpenApp={(appId) => setCurrentView(appId)} />
         )}
         {currentView === 'notes' && <AppleNotes />}
-        {currentView === 'jadwal' && <JadwalView />}
+        {currentView === 'jadwal' && <JadwalView onNavigate={setCurrentView} />}
         {currentView === 'schedule' && <ScheduleView />}
         {currentView === 'settings' && <AccountSettings />}
       </main>

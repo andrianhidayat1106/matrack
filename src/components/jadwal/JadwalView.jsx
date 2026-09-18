@@ -8,30 +8,69 @@ import {
   Flame, 
   Sparkles, 
   Cake, 
-  CalendarDays
+  CalendarDays,
+  Clock,
+  Layers,
+  FileText,
+  Check,
+  Trash2,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Tag,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { getBoards, createTask, updateTask, moveTask, deleteTask } from '../../services/db';
+import { 
+  getBoards, 
+  createTask, 
+  updateTask, 
+  moveTask, 
+  deleteTask,
+  getCustomSchedules,
+  saveCustomSchedule,
+  deleteCustomSchedule
+} from '../../services/db';
 import { TaskModal } from '../kanban/TaskModal';
 
-export const JadwalView = () => {
+// 24 Hour Slots Helper
+const HOURS_24 = Array.from({ length: 24 }, (_, i) => {
+  const h = String(i).padStart(2, '0');
+  return `${h}:00`;
+});
+
+// Category Colors for "By Nama Aja"
+const SCHEDULE_COLORS = [
+  { id: 'emerald', name: 'Hijau (Pribadi/Kesehatan)', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40', text: 'text-emerald-300', dot: 'bg-emerald-400' },
+  { id: 'amber', name: 'Kuning (Santai/Istirahat)', bg: 'bg-amber-500/20', border: 'border-amber-500/40', text: 'text-amber-300', dot: 'bg-amber-400' },
+  { id: 'blue', name: 'Biru (Kerja/Fokus)', bg: 'bg-blue-500/20', border: 'border-blue-500/40', text: 'text-blue-300', dot: 'bg-blue-400' },
+  { id: 'purple', name: 'Ungu (Belajar/Skill)', bg: 'bg-purple-500/20', border: 'border-purple-500/40', text: 'text-purple-300', dot: 'bg-purple-400' },
+  { id: 'rose', name: 'Merah (Urgent/Penting)', bg: 'bg-rose-500/20', border: 'border-rose-500/40', text: 'text-rose-300', dot: 'bg-rose-400' },
+];
+
+export const JadwalView = ({ onNavigate }) => {
   const { user, updateProfile, refreshUserStats } = useAuth();
 
-  // Active sub-menu tab: 'weekly' (Tampilan Per Minggu) or 'age_grid' (1 Tahun Sebelum Umur Naik Tingkat)
-  const [activeSubTab, setActiveSubTab] = useState('weekly');
+  // Collapsible toggle for Kotak Usia
+  const [isAgeGridExpanded, setIsAgeGridExpanded] = useState(true);
 
   // Boards & tasks state
   const [boards, setBoards] = useState([]);
+  const [customSchedules, setCustomSchedules] = useState([]);
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('all');
 
-  // Task Modal state
-  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState(null);
-  const [prefillDate, setPrefillDate] = useState(null);
-  const [prefillColId, setPrefillColId] = useState(null);
+  // Active Day for Mobile View
+  const [mobileSelectedDayIndex, setMobileSelectedDayIndex] = useState(null);
 
   // Weekly view state: week offset (0 = current week, -1 = previous, +1 = next)
   const [weekOffset, setWeekOffset] = useState(0);
+
+  // Time segment filter: 'all', 'morning', 'afternoon', 'evening', 'night'
+  const [timeSegmentFilter, setTimeSegmentFilter] = useState('all');
+
+  // Task Modal state (for deep editing project tasks)
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
 
   // Birth date setting modal & state
   const [birthDateInput, setBirthDateInput] = useState(
@@ -40,20 +79,43 @@ export const JadwalView = () => {
   const [isEditingBday, setIsEditingBday] = useState(false);
   const [hoveredDayCell, setHoveredDayCell] = useState(null);
 
-  // Fetch boards data
-  const loadBoards = useCallback(async () => {
+  // -------------------------------------------------------------------------
+  // 2-CHOICE ADD SCHEDULE MODAL ("By Nama Aja" vs "Tugas")
+  // -------------------------------------------------------------------------
+  const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false);
+  const [scheduleChoiceType, setScheduleChoiceType] = useState('nama'); // 'nama' | 'tugas'
+
+  // Form Fields
+  const [customTitle, setCustomTitle] = useState('');
+  const [customColor, setCustomColor] = useState('emerald');
+  const [customNotes, setCustomNotes] = useState('');
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleStartTime, setScheduleStartTime] = useState('08:00');
+  const [scheduleEndTime, setScheduleEndTime] = useState('09:00');
+
+  // Selected Project & Task for 'tugas' choice
+  const [selectedBoardId, setSelectedBoardId] = useState('');
+  const [selectedTaskId, setSelectedTaskId] = useState('');
+  const [newQuickTaskTitle, setNewQuickTaskTitle] = useState('');
+
+  // Load Boards and Custom Schedules
+  const loadData = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const data = await getBoards(user.id);
-      setBoards(data || []);
+      const [boardsData, schedulesData] = await Promise.all([
+        getBoards(user.id),
+        getCustomSchedules(user.id),
+      ]);
+      setBoards(boardsData || []);
+      setCustomSchedules(schedulesData || []);
     } catch (err) {
-      console.error('Failed to load boards for schedule', err);
+      console.error('Failed to load schedule data', err);
     }
   }, [user?.id]);
 
   useEffect(() => {
-    loadBoards();
-  }, [loadBoards]);
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     if (user?.birth_date) {
@@ -90,77 +152,6 @@ export const JadwalView = () => {
     );
   }, [boards]);
 
-  // Handle task status toggle (Check / Uncheck)
-  const handleToggleTaskDone = async (task) => {
-    const board = boards.find((b) => String(b.id) === String(task.board_id));
-    if (!board) return;
-
-    const cols = board.columns || [];
-    const doneCol = cols.find(
-      (c) => c.name.toLowerCase().includes('selesai') || c.name.toLowerCase().includes('done')
-    ) || cols[cols.length - 1];
-    const belumCol = cols.find(
-      (c) => c.name.toLowerCase().includes('belum')
-    ) || cols[0];
-
-    const isDone = task.column_id === doneCol?.id;
-    const targetColId = isDone ? belumCol?.id : doneCol?.id;
-
-    if (!targetColId) return;
-
-    try {
-      await moveTask(task.id, targetColId, 0);
-      await loadBoards();
-      refreshUserStats(user?.id);
-    } catch (err) {
-      console.error('Failed to toggle task completion', err);
-    }
-  };
-
-  // Save / Update Task
-  const handleSaveTask = async (taskPayload) => {
-    if (!user?.id) return;
-    try {
-      if (taskPayload.id) {
-        await updateTask(taskPayload.id, taskPayload);
-      } else {
-        await createTask({
-          ...taskPayload,
-          user_id: user.id,
-        });
-      }
-      await loadBoards();
-      setIsTaskModalOpen(false);
-      setEditingTask(null);
-      refreshUserStats(user.id);
-    } catch (err) {
-      console.error('Failed to save task in Jadwal', err);
-    }
-  };
-
-  // Delete Task
-  const handleDeleteTask = async (taskId) => {
-    if (!window.confirm('Hapus tugas ini?')) return;
-    try {
-      await deleteTask(taskId);
-      await loadBoards();
-      setIsTaskModalOpen(false);
-      setEditingTask(null);
-      refreshUserStats(user?.id);
-    } catch (err) {
-      console.error('Failed to delete task', err);
-    }
-  };
-
-  // Open Task modal for specific date
-  const handleOpenAddTaskForDate = (dateObj) => {
-    setEditingTask(null);
-    setPrefillDate(dateObj.toISOString());
-    const firstCol = boards[0]?.columns?.[0]?.id || null;
-    setPrefillColId(firstCol);
-    setIsTaskModalOpen(true);
-  };
-
   // Save birth date
   const handleSaveBirthDate = async (e) => {
     if (e) e.preventDefault();
@@ -174,92 +165,6 @@ export const JadwalView = () => {
       console.error('Failed to save birth date', err);
     }
   };
-
-  /* ========================================================================
-     WEEKLY VIEW LOGIC
-     ======================================================================== */
-  const currentWeekDays = useMemo(() => {
-    const today = new Date();
-    // Adjust by weekOffset
-    const baseDate = new Date(today);
-    baseDate.setDate(today.getDate() + weekOffset * 7);
-
-    // Find Monday of this week (0 = Sunday, 1 = Monday)
-    const currentDay = baseDate.getDay();
-    const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
-    const monday = new Date(baseDate);
-    monday.setDate(baseDate.getDate() + distanceToMonday);
-    monday.setHours(0, 0, 0, 0);
-
-    const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-    const days = [];
-
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      const isToday = d.toDateString() === today.toDateString();
-
-      days.push({
-        date: d,
-        dayName: dayNames[i],
-        dayNumber: d.getDate(),
-        monthName: d.toLocaleDateString('id-ID', { month: 'short' }),
-        isToday,
-      });
-    }
-
-    return days;
-  }, [weekOffset]);
-
-  const weekRangeLabel = useMemo(() => {
-    if (currentWeekDays.length === 0) return '';
-    const start = currentWeekDays[0].date;
-    const end = currentWeekDays[6].date;
-    return `${start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-  }, [currentWeekDays]);
-
-  // Tasks in current week
-  const weekTasksByDay = useMemo(() => {
-    const map = {};
-    currentWeekDays.forEach((d) => {
-      map[d.date.toDateString()] = [];
-    });
-
-    allTasks.forEach((task) => {
-      if (selectedProjectFilter !== 'all' && String(task.board_id) !== String(selectedProjectFilter)) {
-        return;
-      }
-
-      if (task.due_date) {
-        const tDate = new Date(task.due_date).toDateString();
-        if (map[tDate]) {
-          map[tDate].push(task);
-        }
-      }
-    });
-
-    return map;
-  }, [allTasks, currentWeekDays, selectedProjectFilter]);
-
-  // Weekly metrics
-  const weeklyMetrics = useMemo(() => {
-    let total = 0;
-    let completed = 0;
-
-    Object.values(weekTasksByDay).forEach((list) => {
-      list.forEach((t) => {
-        total++;
-        const cName = (t.column_name || '').toLowerCase();
-        if (cName.includes('selesai') || cName.includes('done')) {
-          completed++;
-        }
-      });
-    });
-
-    const pending = total - completed;
-    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-    return { total, completed, pending, pct };
-  }, [weekTasksByDay]);
 
   /* ========================================================================
      KOTAK USIA (1 TAHUN MENUJU LEVEL UP UMUR) - GITHUB CONTRIBUTION HEATMAP
@@ -319,7 +224,7 @@ export const JadwalView = () => {
       const isPast = cellDate < now;
       const isFuture = cellDate > now;
 
-      // Count tasks completed on this date
+      // Count tasks or activities on this date
       const tasksOnDate = allTasks.filter((t) => {
         if (!t.due_date && !t.updated_at) return false;
         const taskDate = new Date(t.due_date || t.updated_at).toDateString();
@@ -347,7 +252,7 @@ export const JadwalView = () => {
     const weeks = [];
     let currentWeek = [];
 
-    // Pad first week if the starting day isn't Monday
+    // Pad first week if starting day is not Monday
     const firstDayOfWeek = cells[0]?.dayOfWeek || 0;
     for (let p = 0; p < firstDayOfWeek; p++) {
       currentWeek.push(null);
@@ -382,534 +287,1203 @@ export const JadwalView = () => {
     };
   }, [effectiveBirthDate, allTasks]);
 
+  /* ========================================================================
+     WEEKLY 24-HOUR VIEW LOGIC
+     ======================================================================== */
+  const currentWeekDays = useMemo(() => {
+    const today = new Date();
+    const baseDate = new Date(today);
+    baseDate.setDate(today.getDate() + weekOffset * 7);
+
+    // Find Monday of this week (0 = Sunday, 1 = Monday)
+    const currentDay = baseDate.getDay();
+    const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+    const monday = new Date(baseDate);
+    monday.setDate(baseDate.getDate() + distanceToMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+    const days = [];
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const isToday = d.toDateString() === today.toDateString();
+
+      // Format ISO string YYYY-MM-DD
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const dayStr = String(d.getDate()).padStart(2, '0');
+      const isoDate = `${year}-${month}-${dayStr}`;
+
+      days.push({
+        date: d,
+        isoDate,
+        dayName: dayNames[i],
+        dayNumber: d.getDate(),
+        monthName: d.toLocaleDateString('id-ID', { month: 'short' }),
+        isToday,
+      });
+    }
+
+    return days;
+  }, [weekOffset]);
+
+  // Default mobile selected day to Today's day index
+  useEffect(() => {
+    if (mobileSelectedDayIndex === null) {
+      const todayIndex = currentWeekDays.findIndex((d) => d.isToday);
+      setMobileSelectedDayIndex(todayIndex >= 0 ? todayIndex : 0);
+    }
+  }, [currentWeekDays, mobileSelectedDayIndex]);
+
+  const weekRangeLabel = useMemo(() => {
+    if (currentWeekDays.length === 0) return '';
+    const start = currentWeekDays[0].date;
+    const end = currentWeekDays[6].date;
+    return `${start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  }, [currentWeekDays]);
+
+  // Filtered Hours according to time segment
+  const displayedHours = useMemo(() => {
+    switch (timeSegmentFilter) {
+      case 'subuh':
+        return HOURS_24.slice(0, 6); // 00:00 - 05:00
+      case 'morning':
+        return HOURS_24.slice(6, 12); // 06:00 - 11:00
+      case 'afternoon':
+        return HOURS_24.slice(12, 18); // 12:00 - 17:00
+      case 'evening':
+        return HOURS_24.slice(18, 24); // 18:00 - 23:00
+      default:
+        return HOURS_24; // 00:00 - 23:00 (Full 24h)
+    }
+  }, [timeSegmentFilter]);
+
+  // Combine Tasks & Custom Schedules into a 24-hour day-hour map
+  // Key format: `${isoDate}_${hourString}` e.g. "2026-09-18_09:00"
+  const scheduleMatrix = useMemo(() => {
+    const matrix = {};
+
+    // Helper to extract hour string "09:00"
+    const extractHour = (dateStr) => {
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return null;
+        return `${String(d.getHours()).padStart(2, '0')}:00`;
+      } catch {
+        return null;
+      }
+    };
+
+    const processedTaskIds = new Set();
+
+    // 1. Process Custom Schedules
+    (customSchedules || []).forEach((sched) => {
+      if (!sched.date) return;
+      if (sched.task_id) {
+        processedTaskIds.add(String(sched.task_id));
+      }
+      const startHour = sched.start_time ? `${sched.start_time.split(':')[0].padStart(2, '0')}:00` : '09:00';
+      const key = `${sched.date}_${startHour}`;
+      if (!matrix[key]) matrix[key] = [];
+      matrix[key].push({
+        id: sched.id,
+        taskId: sched.task_id,
+        title: sched.title,
+        type: sched.type || 'custom',
+        start_time: sched.start_time,
+        end_time: sched.end_time,
+        color: sched.color || (sched.type === 'task' ? 'blue' : 'emerald'),
+        notes: sched.notes,
+        board_name: sched.board_name,
+        board_id: sched.board_id,
+        is_completed: sched.is_completed,
+        raw: sched,
+      });
+    });
+
+    // 2. Process Project Tasks with due_date (skip if already registered in customSchedules)
+    (allTasks || []).forEach((task) => {
+      if (processedTaskIds.has(String(task.id))) return;
+      if (selectedProjectFilter !== 'all' && String(task.board_id) !== String(selectedProjectFilter)) {
+        return;
+      }
+
+      if (task.due_date) {
+        const tDate = new Date(task.due_date);
+        if (!isNaN(tDate.getTime())) {
+          const year = tDate.getFullYear();
+          const month = String(tDate.getMonth() + 1).padStart(2, '0');
+          const dayStr = String(tDate.getDate()).padStart(2, '0');
+          const isoDate = `${year}-${month}-${dayStr}`;
+          const hour = extractHour(task.due_date) || '09:00';
+          const key = `${isoDate}_${hour}`;
+
+          const isDone =
+            (task.column_name || '').toLowerCase().includes('selesai') ||
+            (task.column_name || '').toLowerCase().includes('done');
+
+          if (!matrix[key]) matrix[key] = [];
+          matrix[key].push({
+            id: task.id,
+            taskId: task.id,
+            title: task.title,
+            type: 'task',
+            start_time: `${String(tDate.getHours()).padStart(2, '0')}:${String(tDate.getMinutes()).padStart(2, '0')}`,
+            end_time: '',
+            color: 'blue',
+            board_name: task.board_name,
+            board_id: task.board_id,
+            priority: task.priority,
+            is_completed: isDone,
+            raw: task,
+          });
+        }
+      }
+    });
+
+    return matrix;
+  }, [customSchedules, allTasks, selectedProjectFilter]);
+
+  // Open the 2-choice Add Modal prefilled for a given day and hour
+  const handleOpenAddModal = (isoDate, hourStr = '08:00') => {
+    setScheduleDate(isoDate || currentWeekDays[0].isoDate);
+    const startHour = hourStr || '08:00';
+    setScheduleStartTime(startHour);
+
+    // Compute end hour (1 hour later)
+    const hourNum = parseInt(startHour.split(':')[0], 10);
+    const nextHourNum = (hourNum + 1) % 24;
+    setScheduleEndTime(`${String(nextHourNum).padStart(2, '0')}:00`);
+
+    setCustomTitle('');
+    setCustomNotes('');
+    setCustomColor('emerald');
+
+    // Default to first board if available
+    if (boards.length > 0) {
+      setSelectedBoardId(boards[0].id);
+      const firstTask = boards[0].columns?.flatMap((c) => c.tasks || [])?.[0];
+      setSelectedTaskId(firstTask ? firstTask.id : '');
+    } else {
+      setSelectedBoardId('');
+      setSelectedTaskId('');
+    }
+
+    setScheduleChoiceType('nama');
+    setIsAddScheduleModalOpen(true);
+  };
+
+  // Save Schedule Event (Choice 1: By Nama Aja vs Choice 2: Tugas Proyek)
+  const handleSaveScheduleChoice = async (e) => {
+    e.preventDefault();
+    if (!user?.id) return;
+
+    if (scheduleChoiceType === 'nama') {
+      // 1. By Nama Aja (Aktivitas Bebas)
+      if (!customTitle.trim()) return;
+
+      const scheduleItem = {
+        title: customTitle.trim(),
+        date: scheduleDate,
+        start_time: scheduleStartTime,
+        end_time: scheduleEndTime,
+        type: 'custom',
+        color: customColor,
+        notes: customNotes.trim(),
+      };
+
+      saveCustomSchedule(user.id, scheduleItem);
+      await loadData();
+      setIsAddScheduleModalOpen(false);
+    } else {
+      // 2. Tugas Proyek (Route ke Project / Task)
+      let targetTask = null;
+
+      if (selectedTaskId) {
+        targetTask = allTasks.find((t) => String(t.id) === String(selectedTaskId));
+      }
+
+      if (!targetTask && newQuickTaskTitle.trim() && selectedBoardId) {
+        // User wrote a new task title for the project
+        const board = boards.find((b) => String(b.id) === String(selectedBoardId));
+        const colId = board?.columns?.[0]?.id;
+        if (colId) {
+          targetTask = await createTask({
+            user_id: user.id,
+            column_id: colId,
+            title: newQuickTaskTitle.trim(),
+            priority: 'medium',
+          });
+        }
+      }
+
+      if (targetTask) {
+        // Format due_date with exact date and start_time: YYYY-MM-DDTHH:mm:00
+        const [h, m] = (scheduleStartTime || '09:00').split(':');
+        const [year, month, day] = scheduleDate.split('-');
+        const dueDateTime = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), parseInt(h, 10), parseInt(m, 10));
+
+        await updateTask(targetTask.id, {
+          due_date: dueDateTime.toISOString(),
+        });
+
+        // Also save in custom schedule registry for rich time range representation
+        saveCustomSchedule(user.id, {
+          title: targetTask.title,
+          date: scheduleDate,
+          start_time: scheduleStartTime,
+          end_time: scheduleEndTime,
+          type: 'task',
+          task_id: targetTask.id,
+          board_id: targetTask.board_id || selectedBoardId,
+          board_name: targetTask.board_name || boards.find((b) => String(b.id) === String(selectedBoardId))?.name || '',
+          color: 'blue',
+        });
+
+        await loadData();
+        refreshUserStats(user.id);
+        setIsAddScheduleModalOpen(false);
+      }
+    }
+  };
+
+  // Delete an item from schedule
+  const handleDeleteScheduleItem = async (item, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`Hapus jadwal "${item.title}"?`)) return;
+
+    if (item.type === 'custom') {
+      deleteCustomSchedule(user.id, item.id);
+    } else if (item.type === 'task') {
+      // Remove from custom schedules if present
+      deleteCustomSchedule(user.id, item.id);
+      const taskId = item.taskId || item.id;
+      if (taskId) {
+        await updateTask(taskId, { due_date: null });
+      }
+    }
+    await loadData();
+    refreshUserStats(user?.id);
+  };
+
+  // Toggle item completion
+  const handleToggleDone = async (item, e) => {
+    if (e) e.stopPropagation();
+
+    if (item.type === 'custom') {
+      saveCustomSchedule(user.id, {
+        ...item.raw,
+        is_completed: !item.is_completed,
+      });
+      await loadData();
+    } else if (item.type === 'task') {
+      const taskId = item.taskId || item.id;
+      const task = allTasks.find((t) => String(t.id) === String(taskId)) || item.raw;
+      const boardId = task?.board_id || item.board_id;
+      const board = boards.find((b) => String(b.id) === String(boardId));
+
+      if (board && task?.id) {
+        const cols = board.columns || [];
+        const doneCol = cols.find(
+          (c) => c.name.toLowerCase().includes('selesai') || c.name.toLowerCase().includes('done')
+        ) || cols[cols.length - 1];
+        const belumCol = cols.find(
+          (c) => c.name.toLowerCase().includes('belum')
+        ) || cols[0];
+
+        const isDone = task.column_id === doneCol?.id;
+        const targetColId = isDone ? belumCol?.id : doneCol?.id;
+
+        if (targetColId) {
+          await moveTask(task.id, targetColId, 0);
+        }
+      }
+
+      // Also toggle status in custom schedules storage
+      if (item.raw?.task_id || item.type === 'task') {
+        saveCustomSchedule(user.id, {
+          ...item.raw,
+          is_completed: !item.is_completed,
+        });
+      }
+
+      await loadData();
+      refreshUserStats(user?.id);
+    }
+  };
+
+  // Selected board's tasks for the modal dropdown
+  const selectedBoardTasks = useMemo(() => {
+    if (!selectedBoardId) return allTasks;
+    const board = boards.find((b) => String(b.id) === String(selectedBoardId));
+    if (!board) return [];
+    return (board.columns || []).flatMap((c) => (c.tasks || []).map((t) => ({ ...t, column_name: c.name })));
+  }, [boards, selectedBoardId, allTasks]);
+
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] flex flex-col bg-slate-950 text-slate-100 relative">
-      {/* ------------------------------------------------------------- */}
-      {/* Top Header & Sub-Tab Switcher Bar                             */}
-      {/* ------------------------------------------------------------- */}
-      <div className="border-b border-white/10 bg-slate-900/80 backdrop-blur-md px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30 shadow-md">
-        <div className="flex items-center space-x-3">
-          {/* Main Sub-menu Switcher Tabs */}
-          <div className="flex items-center p-1 rounded-2xl bg-slate-950 border border-white/10 text-xs font-semibold">
-            <button
-              onClick={() => setActiveSubTab('weekly')}
-              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl transition-all ${
-                activeSubTab === 'weekly'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 font-bold'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <CalendarDays className="w-4 h-4" />
-              <span>📅 Jadwal Mingguan</span>
-            </button>
-
-            <button
-              onClick={() => setActiveSubTab('age_grid')}
-              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl transition-all ${
-                activeSubTab === 'age_grid'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/30 font-extrabold'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <Flame className="w-4 h-4" />
-              <span>🟩 Kotak Usia (Level Up)</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Right side controls */}
-        <div className="flex items-center space-x-2">
-          {activeSubTab === 'weekly' ? (
-            <>
-              {/* Project Filter */}
-              <select
-                value={selectedProjectFilter}
-                onChange={(e) => setSelectedProjectFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer hidden sm:block"
-              >
-                <option value="all">Semua Proyek ({boards.length})</option>
-                {boards.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    Proyek: {b.name}
-                  </option>
-                ))}
-              </select>
-
-              {/* Quick Add Task Button */}
-              <button
-                onClick={() => handleOpenAddTaskForDate(new Date())}
-                className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all active:scale-95"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Tambah Jadwal</span>
-              </button>
-            </>
-          ) : (
-            /* Kotak Usia Action: Edit Birth Date */
-            <button
-              onClick={() => setIsEditingBday(true)}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all active:scale-95"
-            >
-              <Cake className="w-4 h-4 text-amber-400" />
-              <span>Atur Tanggal Lahir</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ------------------------------------------------------------- */}
-      {/* SUB-VIEW 1: JADWAL MINGGUAN (Weekly View)                      */}
-      {/* ------------------------------------------------------------- */}
-      {activeSubTab === 'weekly' && (
-        <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
-          {/* Week Navigator & Metrics Header */}
-          <div className="glass-card p-4 sm:p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            {/* Week Navigation */}
+    <div className="min-h-[calc(100vh-3.5rem)] flex flex-col bg-slate-950 text-slate-100 p-3 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
+      {/* ============================================================= */}
+      {/* SECTION 1: KOTAK USIA (365-Day GitHub Contribution Heatmap)    */}
+      {/* ============================================================= */}
+      {ageGridCalculation && (
+        <section className="glass-card rounded-3xl border border-white/10 overflow-hidden shadow-2xl transition-all">
+          {/* Header Bar with Toggle & Action */}
+          <div className="p-4 sm:p-5 border-b border-white/10 bg-slate-900/60 backdrop-blur-md flex items-center justify-between gap-4">
             <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-white/10">
-                <button
-                  onClick={() => setWeekOffset((prev) => prev - 1)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                  title="Minggu Sebelumnya"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setWeekOffset(0)}
-                  className="px-3 py-1 text-xs font-bold text-slate-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
-                >
-                  Minggu Ini
-                </button>
-                <button
-                  onClick={() => setWeekOffset((prev) => prev + 1)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                  title="Minggu Berikutnya"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 text-slate-950 flex items-center justify-center font-black shadow-md shadow-amber-500/20 shrink-0">
+                <Flame className="w-5 h-5" />
               </div>
-
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center space-x-2">
-                  <span>{weekRangeLabel}</span>
-                  {weekOffset === 0 && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                      Aktif
-                    </span>
-                  )}
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Tinjau dan checklist target harian Anda sepanjang minggu ini.
+                <div className="flex items-center space-x-2">
+                  <h2 className="text-sm sm:text-base font-black text-white tracking-tight">
+                    Kotak Usia 365 Hari: Level Up Menuju Umur {ageGridCalculation.nextAge}
+                  </h2>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-extrabold border border-amber-500/30">
+                    Tinggal {ageGridCalculation.daysRemaining} Kotak Hari
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">
+                  Siklus 1 tahun umur berjalan dari ulang tahun terakhir menuju level berikutnya.
                 </p>
               </div>
             </div>
 
-            {/* Week Summary Stats */}
-            <div className="flex items-center space-x-3 sm:space-x-4">
-              <div className="px-3 py-2 rounded-2xl bg-slate-950 border border-white/5 text-center">
-                <span className="text-[10px] text-slate-400 block font-medium">Total Jadwal</span>
-                <span className="text-sm font-extrabold text-white">{weeklyMetrics.total}</span>
-              </div>
-              <div className="px-3 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-                <span className="text-[10px] text-emerald-300 block font-medium">Selesai</span>
-                <span className="text-sm font-extrabold text-emerald-400">{weeklyMetrics.completed}</span>
-              </div>
-              <div className="px-3 py-2 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-center">
-                <span className="text-[10px] text-blue-300 block font-medium">Progres</span>
-                <span className="text-sm font-extrabold text-blue-400">{weeklyMetrics.pct}%</span>
-              </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setIsEditingBday(true)}
+                className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-all active:scale-95"
+              >
+                <Cake className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Atur Tanggal Lahir</span>
+                <span className="sm:hidden">Lahir</span>
+              </button>
+
+              <button
+                onClick={() => setIsAgeGridExpanded(!isAgeGridExpanded)}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                title={isAgeGridExpanded ? 'Ciutkan Kotak Usia' : 'Buka Kotak Usia'}
+              >
+                {isAgeGridExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
-          {/* 7 Days Columns Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 sm:gap-4 items-start">
-            {currentWeekDays.map((day) => {
-              const dayTasks = weekTasksByDay[day.date.toDateString()] || [];
-
-              return (
-                <div
-                  key={day.date.toISOString()}
-                  className={`rounded-3xl p-3 sm:p-3.5 flex flex-col min-h-[380px] border transition-all ${
-                    day.isToday
-                      ? 'bg-slate-900/90 border-emerald-500/40 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/30'
-                      : 'bg-slate-900/60 border-white/5 hover:border-white/10'
-                  }`}
-                >
-                  {/* Day Header */}
-                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-white/5">
-                    <div>
-                      <span
-                        className={`text-xs font-bold block ${
-                          day.isToday ? 'text-emerald-400' : 'text-slate-300'
-                        }`}
-                      >
-                        {day.dayName}
-                      </span>
-                      <div className="flex items-center space-x-1.5 mt-0.5">
-                        <span className="text-sm font-extrabold text-white">{day.dayNumber}</span>
-                        <span className="text-[11px] text-slate-500">{day.monthName}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-1">
-                      {day.isToday && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black uppercase tracking-wider">
-                          Hari Ini
-                        </span>
-                      )}
-                      {dayTasks.length > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 text-slate-400 font-mono">
-                          {dayTasks.length}
-                        </span>
-                      )}
-                    </div>
+          {/* Collapsible Content */}
+          {isAgeGridExpanded && (
+            <div className="p-4 sm:p-6 space-y-4 animate-pop-in">
+              {/* Quick Metrics & XP Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-white/5">
+                  <span className="text-[10px] text-slate-400 block font-medium">Umur Sekarang</span>
+                  <div className="text-xl font-black text-white">
+                    {ageGridCalculation.currentAge} <span className="text-xs font-normal text-slate-400">th</span>
                   </div>
-
-                  {/* Tasks in this day */}
-                  <div className="flex-1 space-y-2 overflow-y-auto max-h-[320px] pr-0.5">
-                    {dayTasks.length === 0 ? (
-                      <div className="h-32 flex flex-col items-center justify-center text-center p-3 border border-dashed border-white/5 rounded-2xl">
-                        <p className="text-[11px] text-slate-600">Tidak ada jadwal</p>
-                      </div>
-                    ) : (
-                      dayTasks.map((task) => {
-                        const isDone =
-                          (task.column_name || '').toLowerCase().includes('selesai') ||
-                          (task.column_name || '').toLowerCase().includes('done');
-
-                        return (
-                          <div
-                            key={task.id}
-                            className={`p-2.5 rounded-2xl border transition-all space-y-1.5 group ${
-                              isDone
-                                ? 'bg-slate-950/40 border-white/5 opacity-60'
-                                : 'bg-slate-950/80 border-white/10 hover:border-emerald-500/30'
-                            }`}
-                          >
-                            <div className="flex items-start space-x-2">
-                              {/* 1-click Checkbox */}
-                              <button
-                                onClick={() => handleToggleTaskDone(task)}
-                                className={`mt-0.5 shrink-0 transition-transform active:scale-90 ${
-                                  isDone ? 'text-emerald-400' : 'text-slate-500 hover:text-emerald-400'
-                                }`}
-                                title={isDone ? 'Tandai Belum Selesai' : 'Tandai Selesai'}
-                              >
-                                {isDone ? (
-                                  <CheckCircle2 className="w-4 h-4 fill-emerald-500/20" />
-                                ) : (
-                                  <Circle className="w-4 h-4" />
-                                )}
-                              </button>
-
-                              {/* Task Title & edit modal */}
-                              <div
-                                onClick={() => {
-                                  setEditingTask(task);
-                                  setIsTaskModalOpen(true);
-                                }}
-                                className="flex-1 cursor-pointer min-w-0"
-                              >
-                                <h4
-                                  className={`text-xs font-medium leading-snug line-clamp-2 ${
-                                    isDone ? 'line-through text-slate-500' : 'text-slate-200 hover:text-white'
-                                  }`}
-                                >
-                                  {task.title}
-                                </h4>
-                              </div>
-                            </div>
-
-                            {/* Badges: Project tag & priority */}
-                            <div className="flex items-center justify-between text-[9px] pt-1 border-t border-white/5">
-                              <span className="px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-300 font-medium truncate max-w-[80px]">
-                                {task.board_name}
-                              </span>
-                              <span
-                                className={`px-1 py-0.2 rounded font-semibold ${
-                                  task.priority === 'high'
-                                    ? 'text-rose-400'
-                                    : task.priority === 'medium'
-                                    ? 'text-amber-400'
-                                    : 'text-slate-400'
-                                }`}
-                              >
-                                {task.priority || 'medium'}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {/* Add Task for this Day button */}
-                  <button
-                    onClick={() => handleOpenAddTaskForDate(day.date)}
-                    className="mt-2.5 w-full py-1.5 px-2 rounded-xl bg-white/5 hover:bg-emerald-500/15 text-slate-400 hover:text-emerald-300 border border-white/5 hover:border-emerald-500/30 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-all active:scale-95"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>Tambah</span>
-                  </button>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-white/5">
+                  <span className="text-[10px] text-orange-400 font-medium block">Level Up Berikutnya</span>
+                  <div className="text-xl font-black text-orange-400">
+                    {ageGridCalculation.nextAge} <span className="text-xs font-normal text-orange-300/80">th</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-white/5">
+                  <span className="text-[10px] text-emerald-400 font-medium block">Kotak Terlewati</span>
+                  <div className="text-xl font-black text-emerald-400">
+                    {ageGridCalculation.daysPassed} <span className="text-xs font-normal text-slate-400">/ {ageGridCalculation.totalDaysInCycle}</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-amber-500/20 bg-amber-500/5">
+                  <span className="text-[10px] text-amber-300 font-medium block">Sisa Kotak Hari</span>
+                  <div className="text-xl font-black text-amber-300">
+                    {ageGridCalculation.daysRemaining} <span className="text-xs font-normal text-amber-400">Kotak</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* XP Progress Bar */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="flex items-center space-x-1.5">
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>Kemajuan Tahun Umur {ageGridCalculation.currentAge}:</span>
+                  </span>
+                  <span className="font-extrabold text-amber-400 font-mono">
+                    {ageGridCalculation.progressPct}% • {ageGridCalculation.daysRemaining} hari lagi menuju {ageGridCalculation.nextAge} th
+                  </span>
+                </div>
+                <div className="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-orange-500 transition-all duration-700 shadow-sm"
+                    style={{ width: `${ageGridCalculation.progressPct}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Matrix Heatmap Container */}
+              <div className="pt-2">
+                <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-white/5 mb-3">
+                  <span className="font-semibold text-slate-300">
+                    365 Kotak Hari (Setiap kotak = 1 Hari Menuju Umur {ageGridCalculation.nextAge})
+                  </span>
+                  <div className="flex items-center space-x-3 text-[10px]">
+                    <div className="flex items-center space-x-1">
+                      <div className="w-2.5 h-2.5 rounded bg-slate-900 border border-white/10" />
+                      <span>Sisa Hari</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <div className="w-2.5 h-2.5 rounded bg-emerald-600 border border-emerald-500/40" />
+                      <span>Terlewati</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <div className="w-2.5 h-2.5 rounded bg-amber-400 border border-amber-300 ring-1 ring-amber-400" />
+                      <span>Hari Ini</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tooltip detail when hovered */}
+                {hoveredDayCell && (
+                  <div className="mb-2 p-2 rounded-xl bg-slate-950 border border-amber-500/30 text-xs flex items-center justify-between text-slate-200">
+                    <span className="font-bold text-white">{hoveredDayCell.dateString}</span>
+                    <div>
+                      {hoveredDayCell.isToday ? (
+                        <span className="text-amber-400 font-extrabold">⭐ Hari Ini</span>
+                      ) : hoveredDayCell.isPast ? (
+                        <span className="text-emerald-400">✓ Sudah Terlewati</span>
+                      ) : (
+                        <span className="text-amber-300 font-semibold">
+                          ⏳ Sisa {ageGridCalculation.daysRemaining - (hoveredDayCell.index - ageGridCalculation.daysPassed)} kotak lagi
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 52-Week Horizontal Grid Matrix */}
+                <div className="overflow-x-auto pb-2 no-scrollbar">
+                  <div className="inline-flex gap-1">
+                    <div className="flex flex-col justify-between py-0.5 pr-1.5 text-[9px] text-slate-500 font-mono select-none">
+                      <span>Sen</span>
+                      <span>Rab</span>
+                      <span>Jum</span>
+                      <span>Min</span>
+                    </div>
+
+                    {ageGridCalculation.weeks.map((week, wIndex) => (
+                      <div key={wIndex} className="flex flex-col gap-1 shrink-0">
+                        {week.map((cell, cIndex) => {
+                          if (!cell) {
+                            return <div key={`empty-${wIndex}-${cIndex}`} className="w-3 h-3 rounded-sm bg-transparent" />;
+                          }
+
+                          return (
+                            <button
+                              key={cell.date.toISOString()}
+                              onMouseEnter={() => setHoveredDayCell(cell)}
+                              onMouseLeave={() => setHoveredDayCell(null)}
+                              onClick={() => setHoveredDayCell(cell)}
+                              className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-sm transition-all duration-200 ${
+                                cell.isToday
+                                  ? 'bg-amber-400 border border-amber-300 ring-2 ring-amber-400/60 scale-125 z-10'
+                                  : cell.isPast
+                                  ? 'bg-emerald-600/80 border border-emerald-500/30 hover:bg-emerald-500'
+                                  : 'bg-slate-900 border border-white/10 hover:border-amber-400/60'
+                              }`}
+                              title={`${cell.dateString}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
-      {/* ------------------------------------------------------------- */}
-      {/* SUB-VIEW 2: KOTAK USIA (GitHub Contribution Grid 365 Hari)    */}
-      {/* ------------------------------------------------------------- */}
-      {activeSubTab === 'age_grid' && ageGridCalculation && (
-        <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full animate-pop-in">
-          {/* Hero Banner: Countdown Kotak Hari Menuju Umur Baru */}
-          <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 glass-card border border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-slate-900 to-orange-500/10 shadow-2xl">
-            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="space-y-2">
-                <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-extrabold uppercase tracking-wider">
-                  <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Siklus 1 Tahun Menuju Level Up Umur</span>
-                </div>
-
-                <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-                  Tinggal{' '}
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-orange-400">
-                    {ageGridCalculation.daysRemaining} Kotak Hari
-                  </span>{' '}
-                  Menuju Umur {ageGridCalculation.nextAge}!
-                </h1>
-
-                <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed">
-                  Setiap kotak di bawah mewakili 1 hari perjalanan hidup Anda dalam rentang umur{' '}
-                  <span className="font-bold text-amber-300">{ageGridCalculation.currentAge} tahun</span> menuju{' '}
-                  <span className="font-bold text-orange-400">{ageGridCalculation.nextAge} tahun</span>. Rayakan tiap hari yang terlewati dengan produktivitas nyata.
-                </p>
-              </div>
-
-              {/* Countdown Highlight Card */}
-              <div className="flex items-center space-x-4 bg-slate-950/80 p-4 sm:p-5 rounded-3xl border border-amber-500/30 shadow-xl self-start md:self-auto shrink-0">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 text-slate-950 flex flex-col items-center justify-center font-black shadow-lg shadow-amber-500/20">
-                  <span className="text-xl leading-none">{ageGridCalculation.daysRemaining}</span>
-                  <span className="text-[9px] uppercase tracking-wider">Hari</span>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400">Target Ulang Tahun:</div>
-                  <div className="text-sm font-bold text-white font-mono">
-                    {ageGridCalculation.nextBday.toLocaleDateString('id-ID', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric',
-                    })}
-                  </div>
-                  <div className="text-[11px] text-amber-400 mt-0.5 font-semibold">
-                    Level Up ke Umur {ageGridCalculation.nextAge} 🚀
-                  </div>
-                </div>
-              </div>
+      {/* ============================================================= */}
+      {/* SECTION 2: JADWAL 24 JAM (Weekly 24-Hour Timetable)           */}
+      {/* ============================================================= */}
+      <section className="glass-card rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex flex-col flex-1">
+        {/* Timetable Header Bar: Week Selector, Filter & Add Button */}
+        <div className="p-4 sm:p-5 border-b border-white/10 bg-slate-900/80 backdrop-blur-md flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Week Navigators */}
+            <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-white/10">
+              <button
+                onClick={() => setWeekOffset((prev) => prev - 1)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                title="Minggu Sebelumnya"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setWeekOffset(0)}
+                className="px-3 py-1 text-xs font-bold text-slate-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+              >
+                Minggu Ini
+              </button>
+              <button
+                onClick={() => setWeekOffset((prev) => prev + 1)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                title="Minggu Berikutnya"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Background ambient lighting */}
-            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-          </div>
-
-          {/* Gamified Level-Up Stats Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            <div className="glass-card p-4 rounded-2xl border border-white/5 space-y-1">
-              <span className="text-[11px] text-slate-400 font-medium block">Level Umur Sekarang</span>
-              <div className="text-2xl font-black text-white flex items-center space-x-2">
-                <span>{ageGridCalculation.currentAge}</span>
-                <span className="text-xs font-semibold text-slate-400">th</span>
-              </div>
-              <span className="text-[10px] text-slate-500 block">Siklus berjalan</span>
-            </div>
-
-            <div className="glass-card p-4 rounded-2xl border border-white/5 space-y-1">
-              <span className="text-[11px] text-slate-400 font-medium block">Target Level Berikutnya</span>
-              <div className="text-2xl font-black text-orange-400 flex items-center space-x-2">
-                <span>{ageGridCalculation.nextAge}</span>
-                <span className="text-xs font-semibold text-orange-300/80">th</span>
-              </div>
-              <span className="text-[10px] text-amber-400/80 block font-medium">Level Up Umur</span>
-            </div>
-
-            <div className="glass-card p-4 rounded-2xl border border-white/5 space-y-1">
-              <span className="text-[11px] text-slate-400 font-medium block">Kotak Hari Terlewati</span>
-              <div className="text-2xl font-black text-emerald-400 flex items-center space-x-2">
-                <span>{ageGridCalculation.daysPassed}</span>
-                <span className="text-xs font-semibold text-slate-400">/ {ageGridCalculation.totalDaysInCycle}</span>
-              </div>
-              <span className="text-[10px] text-slate-500 block">Kotak terisi</span>
-            </div>
-
-            <div className="glass-card p-4 rounded-2xl border border-white/5 space-y-1">
-              <span className="text-[11px] text-slate-400 font-medium block">Sisa Kotak Hari</span>
-              <div className="text-2xl font-black text-amber-400 flex items-center space-x-2">
-                <span>{ageGridCalculation.daysRemaining}</span>
-                <span className="text-xs font-semibold text-amber-300">Kotak</span>
-              </div>
-              <span className="text-[10px] text-amber-500 block font-semibold">{ageGridCalculation.progressPct}% selesai</span>
+            {/* Date Range Label */}
+            <div>
+              <h2 className="text-base font-extrabold text-white tracking-tight flex items-center space-x-2">
+                <CalendarDays className="w-4 h-4 text-emerald-400" />
+                <span>{weekRangeLabel}</span>
+                {weekOffset === 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                    Aktif
+                  </span>
+                )}
+              </h2>
+              <span className="text-[11px] text-slate-400">Jadwal 24 Jam Harian (00:00 - 23:00)</span>
             </div>
           </div>
 
-          {/* XP Progress Bar */}
-          <div className="glass-card p-4 rounded-2xl border border-white/10 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300 font-semibold flex items-center space-x-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Progress XP Menuju Umur {ageGridCalculation.nextAge}:</span>
-              </span>
-              <span className="font-extrabold text-amber-400 font-mono">
-                {ageGridCalculation.progressPct}% ({ageGridCalculation.daysPassed} / {ageGridCalculation.totalDaysInCycle} Hari)
-              </span>
+          {/* Controls: Segment filter, Project filter & Add Button */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Time Segment Filter */}
+            <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-white/10 text-xs">
+              <button
+                onClick={() => setTimeSegmentFilter('all')}
+                className={`px-2.5 py-1 rounded-lg transition-colors ${
+                  timeSegmentFilter === 'all' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                24 Jam
+              </button>
+              <button
+                onClick={() => setTimeSegmentFilter('morning')}
+                className={`px-2 py-1 rounded-lg transition-colors ${
+                  timeSegmentFilter === 'morning' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Pagi (06-12)
+              </button>
+              <button
+                onClick={() => setTimeSegmentFilter('afternoon')}
+                className={`px-2 py-1 rounded-lg transition-colors ${
+                  timeSegmentFilter === 'afternoon' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Siang (12-18)
+              </button>
+              <button
+                onClick={() => setTimeSegmentFilter('evening')}
+                className={`px-2 py-1 rounded-lg transition-colors ${
+                  timeSegmentFilter === 'evening' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Malam (18-24)
+              </button>
             </div>
 
-            <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-white/10">
+            {/* Project Filter */}
+            <select
+              value={selectedProjectFilter}
+              onChange={(e) => setSelectedProjectFilter(e.target.value)}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer hidden md:block"
+            >
+              <option value="all">Semua Proyek ({boards.length})</option>
+              {boards.map((b) => (
+                <option key={b.id} value={b.id}>
+                  Proyek: {b.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Ke Proyek / Task Direct Route */}
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('schedule')}
+                className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/20 text-xs font-semibold transition-all active:scale-95 shrink-0"
+                title="Buka Halaman Proyek / Task"
+              >
+                <Layers className="w-3.5 h-3.5 text-blue-400" />
+                <span>Ke Proyek</span>
+                <ExternalLink className="w-3 h-3 text-blue-400/80" />
+              </button>
+            )}
+
+            {/* + TAMBAH JADWAL BUTTON */}
+            <button
+              onClick={() => handleOpenAddModal(currentWeekDays[0]?.isoDate, '08:00')}
+              className="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all active:scale-95 shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Tambah Jadwal</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Day Selector Pills (Visible only on small screens) */}
+        <div className="lg:hidden flex items-center space-x-1.5 p-3 overflow-x-auto bg-slate-900/60 border-b border-white/5 no-scrollbar">
+          {currentWeekDays.map((day, idx) => (
+            <button
+              key={day.isoDate}
+              onClick={() => setMobileSelectedDayIndex(idx)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium shrink-0 flex items-center space-x-1.5 transition-all ${
+                mobileSelectedDayIndex === idx
+                  ? 'bg-emerald-600 text-white font-bold shadow-md'
+                  : day.isToday
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-white/5 text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>{day.dayName}</span>
+              <span className="font-mono text-[11px] opacity-80">{day.dayNumber}</span>
+              {day.isToday && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+            </button>
+          ))}
+        </div>
+
+        {/* 24-Hour Timetable Matrix */}
+        <div className="flex-1 overflow-auto max-h-[700px] divide-y divide-white/5">
+          {/* Table Header Row (Days of the week) */}
+          <div className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md border-b border-white/10 flex text-xs font-semibold">
+            {/* Time column header */}
+            <div className="w-16 sm:w-20 p-2.5 text-center text-slate-500 border-r border-white/10 shrink-0 font-mono text-[11px]">
+              Jam
+            </div>
+
+            {/* Desktop: 7 Day Columns */}
+            <div className="hidden lg:grid grid-cols-7 flex-1 divide-x divide-white/5">
+              {currentWeekDays.map((day) => (
+                <div
+                  key={day.isoDate}
+                  className={`p-2.5 text-center transition-colors ${
+                    day.isToday ? 'bg-emerald-500/10 text-emerald-300 font-bold' : 'text-slate-300'
+                  }`}
+                >
+                  <div className="text-[11px] text-slate-400 font-medium">{day.dayName}</div>
+                  <div className="flex items-center justify-center space-x-1 mt-0.5">
+                    <span className="text-sm font-extrabold text-white">{day.dayNumber}</span>
+                    <span className="text-[10px] text-slate-500">{day.monthName}</span>
+                    {day.isToday && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-1" />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Mobile: 1 Active Selected Day Column */}
+            <div className="lg:hidden flex-1 p-2.5 text-center text-emerald-300 font-bold bg-emerald-500/10">
+              {currentWeekDays[mobileSelectedDayIndex || 0]?.dayName},{' '}
+              {currentWeekDays[mobileSelectedDayIndex || 0]?.dayNumber}{' '}
+              {currentWeekDays[mobileSelectedDayIndex || 0]?.monthName}
+              {currentWeekDays[mobileSelectedDayIndex || 0]?.isToday && ' (Hari Ini)'}
+            </div>
+          </div>
+
+          {/* Table Body: 24 Hourly Rows */}
+          {displayedHours.map((hourStr) => (
+            <div key={hourStr} className="flex min-h-[58px] hover:bg-white/[0.01] transition-colors group/row">
+              {/* Hour Label */}
+              <div className="w-16 sm:w-20 p-2 text-center text-slate-400 font-mono text-xs border-r border-white/10 shrink-0 flex flex-col justify-start pt-2">
+                <span>{hourStr}</span>
+              </div>
+
+              {/* Desktop 7 Columns for this hour */}
+              <div className="hidden lg:grid grid-cols-7 flex-1 divide-x divide-white/5">
+                {currentWeekDays.map((day) => {
+                  const cellKey = `${day.isoDate}_${hourStr}`;
+                  const items = scheduleMatrix[cellKey] || [];
+
+                  return (
+                    <div
+                      key={cellKey}
+                      onClick={() => handleOpenAddModal(day.isoDate, hourStr)}
+                      className={`p-1.5 cursor-pointer relative transition-colors hover:bg-white/5 group/cell ${
+                        day.isToday ? 'bg-emerald-500/[0.02]' : ''
+                      }`}
+                    >
+                      {/* Plus icon on hover */}
+                      <div className="absolute top-1 right-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
+                        <Plus className="w-3.5 h-3.5 text-slate-500 hover:text-emerald-400" />
+                      </div>
+
+                      {/* Scheduled Items in this hour */}
+                      <div className="space-y-1.5">
+                        {items.map((item) => {
+                          const isCustom = item.type === 'custom';
+                          const colorObj =
+                            SCHEDULE_COLORS.find((c) => c.id === item.color) || SCHEDULE_COLORS[0];
+
+                          return (
+                            <div
+                              key={item.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (item.type === 'task') {
+                                  setEditingTask(item.raw);
+                                  setIsTaskModalOpen(true);
+                                }
+                              }}
+                              className={`p-2 rounded-xl border text-xs transition-all shadow-sm group/item relative ${
+                                item.is_completed
+                                  ? 'bg-slate-900/60 border-white/5 opacity-50'
+                                  : isCustom
+                                  ? `${colorObj.bg} ${colorObj.border} ${colorObj.text}`
+                                  : 'bg-blue-600/20 border-blue-500/30 text-blue-200'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-1">
+                                <div className="flex items-start space-x-1.5 flex-1 min-w-0">
+                                  {/* Toggle Checkbox */}
+                                  <button
+                                    onClick={(e) => handleToggleDone(item, e)}
+                                    className={`mt-0.5 shrink-0 transition-transform active:scale-90 ${
+                                      item.is_completed
+                                        ? 'text-emerald-400'
+                                        : 'text-slate-400 hover:text-emerald-400'
+                                    }`}
+                                  >
+                                    {item.is_completed ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 fill-emerald-500/20" />
+                                    ) : (
+                                      <Circle className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+
+                                  <div className="min-w-0 flex-1">
+                                    <h4
+                                      className={`font-semibold leading-tight truncate ${
+                                        item.is_completed ? 'line-through text-slate-500' : ''
+                                      }`}
+                                    >
+                                      {item.title}
+                                    </h4>
+                                    <div className="flex items-center space-x-1 mt-0.5 text-[10px] text-slate-400">
+                                      <span>
+                                        {item.start_time}
+                                        {item.end_time ? ` - ${item.end_time}` : ''}
+                                      </span>
+                                      {item.board_name && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="text-blue-300 truncate max-w-[70px]">
+                                            {item.board_name}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center space-x-1">
+                                  {/* Route to Proyek Button (if task) */}
+                                  {item.type === 'task' && onNavigate && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onNavigate('schedule');
+                                      }}
+                                      className="opacity-0 group-hover/item:opacity-100 p-0.5 text-blue-400 hover:text-blue-200 transition-opacity"
+                                      title="Buka Halaman Proyek / Task"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                    </button>
+                                  )}
+
+                                  {/* Delete Item Button */}
+                                  <button
+                                    onClick={(e) => handleDeleteScheduleItem(item, e)}
+                                    className="opacity-0 group-hover/item:opacity-100 p-0.5 text-slate-400 hover:text-rose-400 transition-opacity"
+                                    title="Hapus Jadwal"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Mobile Single Column for Active Day */}
               <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-orange-500 transition-all duration-700 shadow-md shadow-amber-500/30"
-                style={{ width: `${ageGridCalculation.progressPct}%` }}
-              />
-            </div>
-          </div>
+                onClick={() =>
+                  handleOpenAddModal(
+                    currentWeekDays[mobileSelectedDayIndex || 0]?.isoDate,
+                    hourStr
+                  )
+                }
+                className="lg:hidden flex-1 p-2 cursor-pointer relative hover:bg-white/5"
+              >
+                {(() => {
+                  const activeDay = currentWeekDays[mobileSelectedDayIndex || 0];
+                  if (!activeDay) return null;
+                  const cellKey = `${activeDay.isoDate}_${hourStr}`;
+                  const items = scheduleMatrix[cellKey] || [];
 
-          {/* --------------------------------------------------------- */}
-          {/* THE GITHUB CONTRIBUTION HEATMAP GRID (365 DAYS)           */}
-          {/* --------------------------------------------------------- */}
-          <div className="glass-card p-5 sm:p-7 rounded-3xl border border-white/10 space-y-4 shadow-2xl overflow-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 rounded bg-emerald-500" />
-                <h3 className="text-sm font-bold text-white tracking-tight">
-                  Grid 365 Kotak Hari: Umur {ageGridCalculation.currentAge} → {ageGridCalculation.nextAge}
+                  return (
+                    <div className="space-y-1.5">
+                      {items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-2.5 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-between text-xs"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={(e) => handleToggleDone(item, e)}
+                              className="text-emerald-400"
+                            >
+                              {item.is_completed ? (
+                                <CheckCircle2 className="w-4 h-4" />
+                              ) : (
+                                <Circle className="w-4 h-4" />
+                              )}
+                            </button>
+                            <div>
+                              <div
+                                className={`font-semibold ${
+                                  item.is_completed ? 'line-through text-slate-500' : 'text-white'
+                                }`}
+                              >
+                                {item.title}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {item.start_time} - {item.end_time || 'Selesai'} {item.board_name ? `• ${item.board_name}` : ''}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-1">
+                            {item.type === 'task' && onNavigate && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onNavigate('schedule');
+                                }}
+                                className="p-1 text-blue-400 hover:text-blue-200"
+                                title="Buka di Proyek / Task"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            <button
+                              onClick={(e) => handleDeleteScheduleItem(item, e)}
+                              className="p-1 text-slate-500 hover:text-rose-400"
+                              title="Hapus Jadwal"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ============================================================= */}
+      {/* MODAL: TAMBAH JADWAL 24 JAM (PILIHAN: NAMA AJA vs TUGAS)       */}
+      {/* ============================================================= */}
+      {isAddScheduleModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSaveScheduleChoice}
+            className="bg-slate-900 border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-5 shadow-2xl animate-pop-in text-slate-100"
+          >
+            {/* Modal Title & 2-choice Switcher */}
+            <div className="space-y-3 border-b border-white/10 pb-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-extrabold text-white flex items-center space-x-2">
+                  <Clock className="w-5 h-5 text-emerald-400" />
+                  <span>Tambah Jadwal 24 Jam</span>
                 </h3>
+                <span className="text-xs text-slate-400">{scheduleDate}</span>
               </div>
 
-              {/* Legend */}
-              <div className="flex items-center space-x-3 text-[11px] text-slate-400">
-                <span className="text-slate-500">Keterangan:</span>
-                <div className="flex items-center space-x-1">
-                  <div className="w-3 h-3 rounded bg-slate-900 border border-white/10" />
-                  <span>Sisa Kotak</span>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <div className="w-3 h-3 rounded bg-emerald-600/70 border border-emerald-500/40" />
-                  <span>Terlewati</span>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <div className="w-3 h-3 rounded bg-amber-400 border border-amber-300 ring-2 ring-amber-400/40 animate-pulse" />
-                  <span>Hari Ini</span>
-                </div>
+              {/* 2 CHOICE TABS: 'By Nama Aja' vs 'Dari Tugas Proyek' */}
+              <div className="grid grid-cols-2 p-1 rounded-2xl bg-slate-950 border border-white/10 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setScheduleChoiceType('nama')}
+                  className={`py-2 px-3 rounded-xl transition-all flex items-center justify-center space-x-1.5 ${
+                    scheduleChoiceType === 'nama'
+                      ? 'bg-emerald-600 text-white shadow-md font-extrabold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>✏️ By Nama Aja</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setScheduleChoiceType('tugas')}
+                  className={`py-2 px-3 rounded-xl transition-all flex items-center justify-center space-x-1.5 ${
+                    scheduleChoiceType === 'tugas'
+                      ? 'bg-blue-600 text-white shadow-md font-extrabold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>📌 Dari Tugas Proyek</span>
+                </button>
               </div>
             </div>
 
-            {/* Interactive Tooltip Card on Hover */}
-            {hoveredDayCell ? (
-              <div className="p-3 rounded-2xl bg-slate-950 border border-amber-500/30 text-xs flex items-center justify-between text-slate-200 animate-pop-in">
-                <div className="flex items-center space-x-2">
-                  <span className="font-bold text-white">{hoveredDayCell.dateString}</span>
-                  <span>•</span>
-                  <span className="text-slate-400">Hari ke-{hoveredDayCell.index} dari {ageGridCalculation.totalDaysInCycle}</span>
-                </div>
+            {/* CHOICE 1: BY NAMA AJA (Aktivitas Bebas) */}
+            {scheduleChoiceType === 'nama' && (
+              <div className="space-y-3.5 animate-pop-in">
                 <div>
-                  {hoveredDayCell.isToday ? (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black">
-                      ⭐ Hari Ini (Aktif)
-                    </span>
-                  ) : hoveredDayCell.isPast ? (
-                    <span className="text-emerald-400 font-semibold">
-                      ✓ Sudah Terlewati {hoveredDayCell.tasksCount > 0 ? `(${hoveredDayCell.tasksCount} tugas selesai)` : ''}
-                    </span>
-                  ) : (
-                    <span className="text-amber-400 font-semibold">
-                      ⏳ Sisa {ageGridCalculation.daysRemaining - (hoveredDayCell.index - ageGridCalculation.daysPassed)} kotak hari lagi
-                    </span>
-                  )}
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Nama Aktivitas / Kegiatan:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Tidur Siang, Olahraga, Belajar, Sarapan, Meeting..."
+                    value={customTitle}
+                    onChange={(e) => setCustomTitle(e.target.value)}
+                    required
+                    autoFocus
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
                 </div>
-              </div>
-            ) : (
-              <div className="p-2.5 rounded-2xl bg-slate-950/40 border border-white/5 text-xs text-slate-500 text-center">
-                Arahkan kursor atau sentuh kotak untuk melihat rincian tanggal dan status sisa hari.
+
+                {/* Color Category */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Warna / Kategori:
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {SCHEDULE_COLORS.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setCustomColor(c.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs flex items-center space-x-2 border transition-all ${
+                          customColor === c.id
+                            ? `${c.bg} ${c.border} ${c.text} ring-1 ring-emerald-400`
+                            : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <span className={`w-2.5 h-2.5 rounded-full ${c.dot}`} />
+                        <span>{c.name.split(' ')[0]}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Catatan (Opsional):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Keterangan tambahan..."
+                    value={customNotes}
+                    onChange={(e) => setCustomNotes(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
               </div>
             )}
 
-            {/* Matrix Heatmap Container with smooth horizontal scroll */}
-            <div className="overflow-x-auto pb-4 pt-1 no-scrollbar">
-              <div className="inline-flex gap-1.5">
-                {/* Day Labels along the left */}
-                <div className="flex flex-col justify-between py-0.5 pr-2 text-[10px] text-slate-500 font-mono select-none">
-                  <span>Sen</span>
-                  <span>Sel</span>
-                  <span>Rab</span>
-                  <span>Kam</span>
-                  <span>Jum</span>
-                  <span>Sab</span>
-                  <span>Min</span>
+            {/* CHOICE 2: TUGAS PROYEK (Pilih Task dari Board atau Buat Baru) */}
+            {scheduleChoiceType === 'tugas' && (
+              <div className="space-y-3.5 animate-pop-in">
+                {/* Route link banner to Project / Task */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-blue-950/40 border border-blue-500/20 text-xs">
+                  <div className="flex items-center space-x-2 text-blue-300">
+                    <Layers className="w-4 h-4 text-blue-400 shrink-0" />
+                    <span>Tugas tersambung ke Kanban Proyek</span>
+                  </div>
+                  {onNavigate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddScheduleModalOpen(false);
+                        onNavigate('schedule');
+                      }}
+                      className="flex items-center space-x-1 text-xs font-bold text-blue-400 hover:text-blue-200 hover:underline"
+                    >
+                      <span>Buka Halaman Proyek</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
-                {/* Week Columns */}
-                {ageGridCalculation.weeks.map((week, wIndex) => (
-                  <div key={wIndex} className="flex flex-col gap-1.5 shrink-0">
-                    {week.map((cell, cIndex) => {
-                      if (!cell) {
-                        return (
-                          <div
-                            key={`empty-${wIndex}-${cIndex}`}
-                            className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-md bg-transparent"
-                          />
-                        );
-                      }
+                {/* Select Board */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Pilih Proyek:
+                  </label>
+                  <select
+                    value={selectedBoardId}
+                    onChange={(e) => {
+                      setSelectedBoardId(e.target.value);
+                      setSelectedTaskId('');
+                    }}
+                    required
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    {boards.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        Proyek: {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                      return (
-                        <button
-                          key={cell.date.toISOString()}
-                          onMouseEnter={() => setHoveredDayCell(cell)}
-                          onMouseLeave={() => setHoveredDayCell(null)}
-                          onClick={() => setHoveredDayCell(cell)}
-                          className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-md transition-all duration-200 relative ${
-                            cell.isToday
-                              ? 'bg-amber-400 border border-amber-300 ring-2 ring-amber-400/50 scale-125 z-20 shadow-md shadow-amber-400/40'
-                              : cell.isPast
-                              ? cell.tasksCount > 0
-                                ? 'bg-emerald-400 border border-emerald-300 hover:scale-125 z-10'
-                                : 'bg-emerald-600/80 border border-emerald-500/40 hover:bg-emerald-500 hover:scale-125 z-10'
-                              : 'bg-slate-900/90 border border-white/10 hover:border-amber-400/50 hover:bg-slate-800'
-                          }`}
-                          title={`${cell.dateString}: ${cell.isToday ? 'Hari Ini' : cell.isPast ? 'Sudah Terlewati' : 'Belum Terlewati'}`}
-                        />
-                      );
-                    })}
+                {/* Select Task */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Pilih Tugas yang Ingin Dijadwalkan:
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      {selectedBoardTasks.length} task tersedia
+                    </span>
                   </div>
-                ))}
+                  {selectedBoardTasks.length > 0 ? (
+                    <select
+                      value={selectedTaskId}
+                      onChange={(e) => {
+                        setSelectedTaskId(e.target.value);
+                        const t = allTasks.find((item) => String(item.id) === String(e.target.value));
+                        if (t) setCustomTitle(t.title);
+                      }}
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="">-- Pilih Tugas dari Proyek Ini --</option>
+                      {selectedBoardTasks.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title} ({t.column_name || 'Tugas'})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-slate-950/60 border border-white/5 text-xs text-slate-400">
+                      Belum ada tugas di proyek ini. Anda bisa langsung buat tugas baru di bawah.
+                    </div>
+                  )}
+                </div>
+
+                {/* Or Quick Create Task */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    Atau buat tugas baru di proyek ini (nambah dari sini):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ketik judul tugas baru langsung..."
+                    value={newQuickTaskTitle}
+                    onChange={(e) => setNewQuickTaskTitle(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Tugas baru akan otomatis masuk ke board proyek yang dipilih dan langsung terpasang di jadwal ini.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* COMMON FIELDS: Tanggal & Jam (Start & End) */}
+            <div className="pt-2 border-t border-white/10 space-y-3">
+              <div className="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Tanggal:
+                  </label>
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    required
+                    className="w-full px-2.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Jam Mulai:
+                  </label>
+                  <select
+                    value={scheduleStartTime}
+                    onChange={(e) => setScheduleStartTime(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-mono"
+                  >
+                    {HOURS_24.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Jam Selesai:
+                  </label>
+                  <select
+                    value={scheduleEndTime}
+                    onChange={(e) => setScheduleEndTime(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-mono"
+                  >
+                    {HOURS_24.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
-            {/* Motivational Footer */}
-            <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
-              <span className="flex items-center space-x-1.5 text-amber-300/80">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Jadikan setiap kotak hari penuh arti dan progres nyata!</span>
-              </span>
-
-              <div className="flex items-center space-x-2">
-                <span>Tanggal Lahir Terdaftar:</span>
-                <span className="font-bold text-white font-mono">{effectiveBirthDate}</span>
-                <button
-                  onClick={() => setIsEditingBday(true)}
-                  className="text-amber-400 hover:underline text-xs"
-                >
-                  (Ubah)
-                </button>
-              </div>
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setIsAddScheduleModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-white/10"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className={`px-5 py-2 rounded-xl text-xs font-bold text-white shadow-md transition-all active:scale-95 ${
+                  scheduleChoiceType === 'nama'
+                    ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30'
+                }`}
+              >
+                Simpan ke Jadwal 24 Jam
+              </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* Modal: Atur Tanggal Lahir                                     */}
+      {/* MODAL: ATUR TANGGAL LAHIR                                     */}
       {/* ------------------------------------------------------------- */}
       {isEditingBday && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleSaveBirthDate}
             className="bg-slate-900 border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl animate-pop-in text-slate-100"
@@ -921,7 +1495,7 @@ export const JadwalView = () => {
               <div>
                 <h3 className="text-sm font-bold text-white">Atur Tanggal Lahir</h3>
                 <p className="text-xs text-slate-400">
-                  Untuk menghitung siklus 1 tahun kotak-kotak GitHub menuju umur berikutnya.
+                  Untuk menghitung siklus 365 kotak hari menuju umur berikutnya.
                 </p>
               </div>
             </div>
@@ -937,13 +1511,6 @@ export const JadwalView = () => {
                 required
                 className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 cursor-pointer"
               />
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-950/60 border border-white/5 text-[11px] text-slate-400 space-y-1">
-              <p>💡 <strong className="text-slate-200">Bagaimana sistem bekerja?</strong></p>
-              <p>
-                Sistem akan membuat 365 kotak hari dalam siklus umur berjalan Anda. Hari-hari yang sudah terlewati akan berwarna hijau, hari ini berkedip emas, dan sisa kotak akan menghitung mundur hari menuju ulang tahun berikutnya!
-              </p>
             </div>
 
             <div className="flex items-center justify-end space-x-2 pt-2 border-t border-white/10">
@@ -965,19 +1532,33 @@ export const JadwalView = () => {
         </div>
       )}
 
-      {/* ------------------------------------------------------------- */}
-      {/* Full Task Modal for Weekly Scheduling                         */}
-      {/* ------------------------------------------------------------- */}
+      {/* Task Modal for deep task editing */}
       <TaskModal
         isOpen={isTaskModalOpen}
         onClose={() => {
           setIsTaskModalOpen(false);
           setEditingTask(null);
         }}
-        onSave={handleSaveTask}
-        onDelete={handleDeleteTask}
-        initialTask={editingTask || (prefillDate ? { due_date: prefillDate } : null)}
-        targetColumnId={prefillColId || allAvailableColumns[0]?.id}
+        onSave={async (taskPayload) => {
+          if (taskPayload.id) {
+            await updateTask(taskPayload.id, taskPayload);
+          } else {
+            await createTask({ ...taskPayload, user_id: user.id });
+          }
+          await loadData();
+          setIsTaskModalOpen(false);
+          setEditingTask(null);
+          refreshUserStats(user?.id);
+        }}
+        onDelete={async (taskId) => {
+          await deleteTask(taskId);
+          await loadData();
+          setIsTaskModalOpen(false);
+          setEditingTask(null);
+          refreshUserStats(user?.id);
+        }}
+        initialTask={editingTask}
+        targetColumnId={allAvailableColumns[0]?.id}
         columns={allAvailableColumns}
       />
     </div>
