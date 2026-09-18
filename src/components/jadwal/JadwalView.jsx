@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -8,12 +8,12 @@ import {
   Flame, 
   Sparkles, 
   Cake, 
-  CalendarDays,
-  Clock,
-  Layers,
-  Trash2,
-  ExternalLink,
-  ChevronDown,
+  CalendarDays, 
+  Clock, 
+  Layers, 
+  Trash2, 
+  ExternalLink, 
+  ChevronDown, 
   ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -97,6 +97,34 @@ export const JadwalView = ({ onNavigate }) => {
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [newQuickTaskTitle, setNewQuickTaskTitle] = useState('');
 
+  // -------------------------------------------------------------------------
+  // EDIT SCHEDULE MODAL STATE
+  // -------------------------------------------------------------------------
+  const [isEditScheduleModalOpen, setIsEditScheduleModalOpen] = useState(false);
+  const [editingScheduleItem, setEditingScheduleItem] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editColor, setEditColor] = useState('emerald');
+  const [editNotes, setEditNotes] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editStartTime, setEditStartTime] = useState('08:00');
+  const [editEndTime, setEditEndTime] = useState('09:00');
+
+  // -------------------------------------------------------------------------
+  // DRAG TO RESIZE & DRAG TO MOVE STATE
+  // -------------------------------------------------------------------------
+  const [dragState, setDragState] = useState(null);
+  const justDraggedRef = useRef(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const nowDecimal = useMemo(() => {
+    return currentTime.getHours() + currentTime.getMinutes() / 60;
+  }, [currentTime]);
+
   // Load Boards, Custom Schedules and Notes
   const loadData = useCallback(async () => {
     if (!user?.id) return;
@@ -117,6 +145,102 @@ export const JadwalView = ({ onNavigate }) => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Window listeners for Drag-to-Resize duration & Drag-to-Move
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handlePointerMove = (e) => {
+      const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+      if (clientY === undefined) return;
+
+      const deltaY = clientY - dragState.startY;
+      // 64px = 1 hour, snap to 0.5 hour (30 mins)
+      const rawDeltaHours = deltaY / 64;
+      const snappedDeltaHours = Math.round(rawDeltaHours * 2) / 2;
+
+      if (dragState.type === 'resize') {
+        const newEndDecimal = Math.min(
+          24,
+          Math.max(dragState.initialStartDecimal + 0.5, dragState.initialEndDecimal + snappedDeltaHours)
+        );
+        setDragState((prev) => (prev ? { ...prev, currentEndDecimal: newEndDecimal } : null));
+      } else if (dragState.type === 'move') {
+        const duration = dragState.initialEndDecimal - dragState.initialStartDecimal;
+        const newStartDecimal = Math.max(
+          0,
+          Math.min(24 - duration, dragState.initialStartDecimal + snappedDeltaHours)
+        );
+        const newEndDecimal = newStartDecimal + duration;
+        setDragState((prev) =>
+          prev ? { ...prev, currentStartDecimal: newStartDecimal, currentEndDecimal: newEndDecimal } : null
+        );
+      }
+    };
+
+    const handlePointerUp = async () => {
+      if (!dragState || !user?.id) {
+        setDragState(null);
+        return;
+      }
+
+      const item = dragState.item;
+      const startDec = dragState.currentStartDecimal;
+      const endDec = dragState.currentEndDecimal;
+
+      const hasChanged =
+        startDec !== dragState.initialStartDecimal || endDec !== dragState.initialEndDecimal;
+
+      if (hasChanged) {
+        const formatHourMinute = (dec) => {
+          const h = Math.floor(dec);
+          const m = Math.round((dec - h) * 60);
+          return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        };
+
+        const newStartTime = formatHourMinute(startDec);
+        const newEndTime = formatHourMinute(endDec);
+
+        const updatedItem = {
+          ...item.raw,
+          start_time: newStartTime,
+          end_time: newEndTime,
+        };
+
+        saveCustomSchedule(user.id, updatedItem);
+
+        const taskId = item.taskId || item.raw?.task_id;
+        if (taskId && item.raw?.date) {
+          const [h, m] = newStartTime.split(':').map(Number);
+          const [year, month, day] = item.raw.date.split('-');
+          const dueDateTime = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), h, m);
+          await updateTask(taskId, {
+            due_date: dueDateTime.toISOString(),
+          });
+        }
+
+        await loadData();
+        refreshUserStats(user.id);
+      }
+
+      setDragState(null);
+      setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 50);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handlePointerMove, { passive: false });
+    window.addEventListener('touchend', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+    };
+  }, [dragState, user?.id, loadData, refreshUserStats]);
 
   useEffect(() => {
     if (user?.birth_date) {
@@ -375,6 +499,12 @@ export const JadwalView = ({ onNavigate }) => {
       return (h || 0) + (m || 0) / 60;
     };
 
+    const formatHourMinute = (dec) => {
+      const h = Math.floor(dec);
+      const m = Math.round((dec - h) * 60);
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
     // Prepare day map for the current week
     const dayMap = {};
     currentWeekDays.forEach((d) => {
@@ -390,10 +520,17 @@ export const JadwalView = ({ onNavigate }) => {
         processedTaskIds.add(String(sched.task_id));
       }
 
-      const sDec = toDecimal(sched.start_time, 9.0);
+      let sDec = toDecimal(sched.start_time, 9.0);
       let eDec = toDecimal(sched.end_time, sDec + 1.0);
+
+      // Account for live drag preview if this item is being resized or moved
+      if (dragState && String(dragState.item.id) === String(sched.id)) {
+        sDec = dragState.currentStartDecimal;
+        eDec = dragState.currentEndDecimal;
+      }
+
       if (eDec <= sDec) {
-        eDec = sDec + 1.0;
+        eDec = sDec + 0.5;
       }
       const rawDurationHours = Math.round((eDec - sDec) * 10) / 10;
 
@@ -402,8 +539,8 @@ export const JadwalView = ({ onNavigate }) => {
         taskId: sched.task_id,
         title: sched.title,
         type: sched.type || 'custom',
-        start_time: sched.start_time || '09:00',
-        end_time: sched.end_time || `${String(Math.min(23, Math.floor(sDec + 1))).padStart(2, '0')}:00`,
+        start_time: formatHourMinute(sDec),
+        end_time: formatHourMinute(eDec),
         color: sched.color || (sched.type === 'task' ? 'blue' : 'emerald'),
         notes: sched.notes,
         board_name: sched.board_name,
@@ -434,10 +571,18 @@ export const JadwalView = ({ onNavigate }) => {
           if (dayMap[isoDate]) {
             const h = tDate.getHours();
             const m = tDate.getMinutes();
-            const sDec = h + m / 60;
-            const eDec = sDec + 1.0;
-            const start_time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-            const end_time = `${String(Math.min(23, h + 1)).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+            let sDec = h + m / 60;
+            let eDec = sDec + 1.0;
+
+            if (dragState && String(dragState.item.id) === String(task.id)) {
+              sDec = dragState.currentStartDecimal;
+              eDec = dragState.currentEndDecimal;
+            }
+
+            if (eDec <= sDec) {
+              eDec = sDec + 0.5;
+            }
+            const rawDurationHours = Math.round((eDec - sDec) * 10) / 10;
 
             const isDone =
               (task.column_name || '').toLowerCase().includes('selesai') ||
@@ -448,8 +593,8 @@ export const JadwalView = ({ onNavigate }) => {
               taskId: task.id,
               title: task.title,
               type: 'task',
-              start_time,
-              end_time,
+              start_time: formatHourMinute(sDec),
+              end_time: formatHourMinute(eDec),
               color: 'blue',
               board_name: task.board_name,
               board_id: task.board_id,
@@ -458,7 +603,7 @@ export const JadwalView = ({ onNavigate }) => {
               raw: task,
               startDecimal: sDec,
               endDecimal: eDec,
-              rawDurationHours: 1,
+              rawDurationHours,
             });
           }
         }
@@ -558,7 +703,7 @@ export const JadwalView = ({ onNavigate }) => {
     });
 
     return resultMap;
-  }, [displayedHours, currentWeekDays, customSchedules, allTasks, selectedProjectFilter]);
+  }, [displayedHours, currentWeekDays, customSchedules, allTasks, selectedProjectFilter, dragState]);
 
   // Open the 2-choice Add Modal prefilled for a given day and hour
   const handleOpenAddModal = (isoDate = null, hourStr = null) => {
@@ -592,12 +737,130 @@ export const JadwalView = ({ onNavigate }) => {
     setIsAddScheduleModalOpen(true);
   };
 
+  // Open Edit Schedule Modal when clicking a container
+  const handleOpenEditScheduleModal = (item) => {
+    setEditingScheduleItem(item);
+    setEditTitle(item.title || '');
+    setEditColor(item.color || 'emerald');
+    setEditNotes(item.notes || item.raw?.notes || '');
+    setEditDate(item.raw?.date || item.date || currentWeekDays[0]?.isoDate);
+    setEditStartTime(item.start_time || '08:00');
+    setEditEndTime(item.end_time || '09:00');
+    setIsEditScheduleModalOpen(true);
+  };
+
+  // Save changes from Edit Schedule Modal
+  const handleSaveEditSchedule = async (e) => {
+    if (e) e.preventDefault();
+    if (!user?.id || !editingScheduleItem) return;
+
+    const updatedItem = {
+      ...editingScheduleItem.raw,
+      title: editTitle.trim() || editingScheduleItem.title,
+      date: editDate,
+      start_time: editStartTime,
+      end_time: editEndTime,
+      color: editColor,
+      notes: editNotes.trim(),
+    };
+
+    saveCustomSchedule(user.id, updatedItem);
+
+    const taskId = editingScheduleItem.taskId || editingScheduleItem.raw?.task_id;
+    if (taskId) {
+      const [h, m] = (editStartTime || '09:00').split(':');
+      const [year, month, day] = editDate.split('-');
+      const dueDateTime = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), parseInt(h, 10), parseInt(m, 10));
+      await updateTask(taskId, {
+        title: editTitle.trim(),
+        due_date: dueDateTime.toISOString(),
+      });
+    }
+
+    await loadData();
+    refreshUserStats(user?.id);
+    setIsEditScheduleModalOpen(false);
+    setEditingScheduleItem(null);
+  };
+
+  // Delete item directly from Edit Schedule Modal
+  const handleDeleteFromEditModal = async () => {
+    if (!editingScheduleItem) return;
+    await handleDeleteScheduleItem(editingScheduleItem);
+    setIsEditScheduleModalOpen(false);
+    setEditingScheduleItem(null);
+  };
+
+  // Drag-to-Resize Start Handler (Pulls the bottom of the card)
+  const handleStartResize = (item, day, e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    justDraggedRef.current = true;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+    if (clientY === undefined) return;
+
+    setDragState({
+      type: 'resize',
+      item,
+      startY: clientY,
+      initialStartDecimal: item.startDecimal,
+      initialEndDecimal: item.endDecimal,
+      currentStartDecimal: item.startDecimal,
+      currentEndDecimal: item.endDecimal,
+      dayDate: day.isoDate,
+    });
+  };
+
+  // Drag-to-Move Start Handler (Drags the card up/down)
+  const handleStartMove = (item, day, e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    if (e.target.closest('button') || e.target.closest('input')) return;
+
+    const startY = e.clientY ?? e.touches?.[0]?.clientY;
+    if (startY === undefined) return;
+
+    let hasStarted = false;
+
+    const onMove = (moveEv) => {
+      const currentY = moveEv.clientY ?? moveEv.touches?.[0]?.clientY;
+      if (currentY === undefined) return;
+
+      if (!hasStarted && Math.abs(currentY - startY) > 8) {
+        hasStarted = true;
+        justDraggedRef.current = true;
+        setDragState({
+          type: 'move',
+          item,
+          startY,
+          initialStartDecimal: item.startDecimal,
+          initialEndDecimal: item.endDecimal,
+          currentStartDecimal: item.startDecimal,
+          currentEndDecimal: item.endDecimal,
+          dayDate: day.isoDate,
+        });
+      }
+    };
+
+    const onEnd = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onMove);
+    window.addEventListener('touchend', onEnd);
+  };
+
   // Render individual event card (spans full duration, side-by-side if overlapping)
   const renderEventCard = (item, day) => {
     const isCustom = item.type === 'custom';
     const colorObj =
       SCHEDULE_COLORS.find((c) => c.id === item.color) || SCHEDULE_COLORS[0];
-    const isTallCard = item.height >= 110;
+    const isTallCard = item.height >= 90;
+    const isBeingDragged = dragState && String(dragState.item.id) === String(item.id);
 
     return (
       <div
@@ -608,24 +871,32 @@ export const JadwalView = ({ onNavigate }) => {
           height: `${item.height}px`,
           left: `${item.leftPct}%`,
           width: `calc(${item.widthPct}% - 4px)`,
+          zIndex: isBeingDragged ? 40 : 10,
         }}
         onClick={(e) => {
           e.stopPropagation();
-          if (item.type === 'task') {
-            setEditingTask(item.raw);
-            setIsTaskModalOpen(true);
+          if (justDraggedRef.current) {
+            justDraggedRef.current = false;
+            return;
           }
+          handleOpenEditScheduleModal(item);
         }}
-        className={`pointer-events-auto p-2 rounded-2xl border text-xs transition-all shadow-md group/item overflow-hidden flex flex-col justify-between ${
-          item.is_completed
+        className={`pointer-events-auto p-2 rounded-2xl border text-xs transition-shadow shadow-md group/item overflow-hidden flex flex-col justify-between cursor-pointer select-none ${
+          isBeingDragged
+            ? 'ring-2 ring-emerald-400 shadow-2xl scale-[1.01] bg-slate-900 border-emerald-400'
+            : item.is_completed
             ? 'bg-slate-900/80 border-white/10 opacity-55'
             : isCustom
-            ? `${colorObj.bg} ${colorObj.border} ${colorObj.text} backdrop-blur-md`
-            : 'bg-blue-600/25 border-blue-500/40 text-blue-100 backdrop-blur-md'
+            ? `${colorObj.bg} ${colorObj.border} ${colorObj.text} backdrop-blur-md hover:border-white/30`
+            : 'bg-blue-600/25 border-blue-500/40 text-blue-100 backdrop-blur-md hover:border-blue-400'
         }`}
       >
-        {/* Top bar: Checkbox + Title + Actions */}
-        <div className="flex items-start justify-between gap-1.5">
+        {/* Top bar: Checkbox + Title + Actions (with Drag Move trigger) */}
+        <div
+          onMouseDown={(e) => handleStartMove(item, day, e)}
+          onTouchStart={(e) => handleStartMove(item, day, e)}
+          className="flex items-start justify-between gap-1.5 cursor-grab active:cursor-grabbing"
+        >
           <div className="flex items-start space-x-1.5 flex-1 min-w-0">
             {/* Toggle Checkbox */}
             <button
@@ -668,14 +939,14 @@ export const JadwalView = ({ onNavigate }) => {
           </div>
 
           {/* Action buttons on top right */}
-          <div className="flex items-center space-x-1 shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
+          <div className="flex items-center space-x-0.5 shrink-0">
             {/* Quick add another task at the same hour */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleOpenAddModal(day.isoDate, item.start_time);
               }}
-              className="p-1 rounded-md bg-white/10 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300"
+              className="p-1 rounded-md hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-300 transition-colors opacity-0 group-hover/item:opacity-100"
               title="Tambah task lain di jam yang sama"
             >
               <Plus className="w-3 h-3" />
@@ -688,8 +959,8 @@ export const JadwalView = ({ onNavigate }) => {
                   e.stopPropagation();
                   onNavigate('schedule');
                 }}
-                className="p-1 rounded-md bg-white/10 text-blue-300 hover:text-white"
-                title="Buka Halaman Proyek / Task"
+                className="p-1 rounded-md hover:bg-blue-500/20 text-blue-300 hover:text-white transition-colors"
+                title="Buka Halaman Proyek di Kanban"
               >
                 <ExternalLink className="w-3 h-3" />
               </button>
@@ -698,7 +969,7 @@ export const JadwalView = ({ onNavigate }) => {
             {/* Delete Item Button */}
             <button
               onClick={(e) => handleDeleteScheduleItem(item, e)}
-              className="p-1 rounded-md bg-white/10 text-slate-400 hover:text-rose-400 hover:bg-rose-500/20"
+              className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 transition-colors opacity-0 group-hover/item:opacity-100"
               title="Hapus Jadwal"
             >
               <Trash2 className="w-3 h-3" />
@@ -706,9 +977,9 @@ export const JadwalView = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Tall Card Extended Content (Notes / Board Name / + Quick Add) */}
+        {/* Tall Card Extended Content (Notes / Board Name) */}
         {isTallCard && (
-          <div className="mt-2 pt-2 border-t border-white/10 text-[11px] space-y-1.5">
+          <div className="mt-1 pb-2 text-[11px] space-y-1">
             {item.board_name && (
               <div className="flex items-center space-x-1 text-blue-300">
                 <Layers className="w-3 h-3 shrink-0" />
@@ -716,22 +987,29 @@ export const JadwalView = ({ onNavigate }) => {
               </div>
             )}
             {item.notes && (
-              <p className="text-slate-300 text-[10px] line-clamp-2 italic bg-black/20 p-1.5 rounded-lg">
+              <p className="text-slate-300 text-[10px] line-clamp-1 italic bg-black/20 px-1.5 py-0.5 rounded">
                 "{item.notes}"
               </p>
             )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenAddModal(day.isoDate, item.start_time);
-              }}
-              className="w-full py-1 px-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] text-slate-300 hover:text-white font-medium flex items-center justify-center space-x-1 transition-all"
-            >
-              <Plus className="w-3 h-3 text-emerald-400" />
-              <span>+ Tambah task lain di jam ini</span>
-            </button>
           </div>
         )}
+
+        {/* Live Resizing Tooltip while dragging */}
+        {isBeingDragged && dragState?.type === 'resize' && (
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-mono text-[10px] font-black shadow-lg pointer-events-none z-30 whitespace-nowrap">
+            Sampai {item.end_time} ({item.rawDurationHours} Jam)
+          </div>
+        )}
+
+        {/* Interactive Bottom Drag-to-Resize Handle */}
+        <div
+          onMouseDown={(e) => handleStartResize(item, day, e)}
+          onTouchStart={(e) => handleStartResize(item, day, e)}
+          className="absolute bottom-0 inset-x-0 h-3.5 cursor-ns-resize flex items-center justify-center group/handle hover:bg-white/20 transition-colors z-20 rounded-b-2xl bg-white/[0.04]"
+          title="Tarik ke bawah / atas untuk ubah jam selesai & durasi"
+        >
+          <div className="w-8 h-1 rounded-full bg-white/40 group-hover/handle:bg-white transition-all group-hover/handle:w-12 shadow-sm" />
+        </div>
       </div>
     );
   };
@@ -1310,6 +1588,17 @@ export const JadwalView = ({ onNavigate }) => {
                       ))}
                     </div>
 
+                    {/* Current time indicator line on today's column */}
+                    {day.isToday && nowDecimal >= segmentStartHour && nowDecimal <= segmentEndHour && (
+                      <div
+                        className="absolute inset-x-0 z-20 pointer-events-none flex items-center"
+                        style={{ top: `${(nowDecimal - segmentStartHour) * 64}px` }}
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-lg shadow-rose-500/80 -ml-1 ring-2 ring-rose-400 animate-pulse" />
+                        <div className="h-[2px] w-full bg-rose-500/90 shadow-sm shadow-rose-500/50" />
+                      </div>
+                    )}
+
                     {/* Events Layer: Absolutely positioned & continuous multi-hour spanning */}
                     <div className="absolute inset-0 pointer-events-none p-1">
                       {dayPositionedEvents.map((item) => renderEventCard(item, day))}
@@ -1349,6 +1638,17 @@ export const JadwalView = ({ onNavigate }) => {
                         </div>
                       ))}
                     </div>
+
+                    {/* Current time indicator line if activeDay is today */}
+                    {activeDay.isToday && nowDecimal >= segmentStartHour && nowDecimal <= segmentEndHour && (
+                      <div
+                        className="absolute inset-x-0 z-20 pointer-events-none flex items-center"
+                        style={{ top: `${(nowDecimal - segmentStartHour) * 64}px` }}
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-lg shadow-rose-500/80 -ml-1 ring-2 ring-rose-400 animate-pulse" />
+                        <div className="h-[2px] w-full bg-rose-500/90 shadow-sm shadow-rose-500/50" />
+                      </div>
+                    )}
 
                     {/* Events Layer */}
                     <div className="absolute inset-0 pointer-events-none p-1">
@@ -1646,6 +1946,187 @@ export const JadwalView = ({ onNavigate }) => {
               >
                 Simpan ke Jadwal 24 Jam
               </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ============================================================= */}
+      {/* MODAL: EDIT JADWAL (Ubah Waktu, Judul, Warna, dsb)            */}
+      {/* ============================================================= */}
+      {isEditScheduleModalOpen && editingScheduleItem && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSaveEditSchedule}
+            className="bg-slate-900 border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-5 shadow-2xl animate-pop-in text-slate-100"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center space-x-2">
+                <Clock className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-extrabold text-white">Edit Jadwal Kegiatan</h3>
+              </div>
+              <span className="text-xs text-slate-400 font-mono">{editDate}</span>
+            </div>
+
+            {/* Linked Task Banner if connected */}
+            {editingScheduleItem.type === 'task' && (
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-blue-950/40 border border-blue-500/20 text-xs">
+                <div className="flex items-center space-x-2 text-blue-300">
+                  <Layers className="w-4 h-4 text-blue-400 shrink-0" />
+                  <span>
+                    Tersambung ke Proyek: <strong className="text-white">{editingScheduleItem.board_name || 'Proyek'}</strong>
+                  </span>
+                </div>
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditScheduleModalOpen(false);
+                      onNavigate('schedule');
+                    }}
+                    className="flex items-center space-x-1 text-xs font-bold text-blue-400 hover:text-blue-200 hover:underline"
+                  >
+                    <span>Buka Proyek</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Title */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Nama Jadwal / Kegiatan:
+              </label>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                required
+                className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            {/* Color Category */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Kategori Warna:
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {SCHEDULE_COLORS.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setEditColor(c.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs flex items-center space-x-2 border transition-all ${
+                      editColor === c.id
+                        ? `${c.bg} ${c.border} ${c.text} ring-1 ring-emerald-400 font-bold`
+                        : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full ${c.dot}`} />
+                    <span>{c.name.split(' ')[0]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Date, Start Time, End Time */}
+            <div className="grid grid-cols-3 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Tanggal:
+                </label>
+                <input
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  required
+                  className="w-full px-2.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Jam Mulai:
+                </label>
+                <select
+                  value={editStartTime}
+                  onChange={(e) => {
+                    const newStart = e.target.value;
+                    setEditStartTime(newStart);
+                    const [sh] = newStart.split(':').map(Number);
+                    const [eh] = editEndTime.split(':').map(Number);
+                    if (eh <= sh) {
+                      const nextH = (sh + 1) % 24;
+                      setEditEndTime(`${String(nextH).padStart(2, '0')}:00`);
+                    }
+                  }}
+                  className="w-full px-2.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono cursor-pointer"
+                >
+                  {HOURS_24.map((h) => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Jam Selesai:
+                </label>
+                <select
+                  value={editEndTime}
+                  onChange={(e) => setEditEndTime(e.target.value)}
+                  className="w-full px-2.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono cursor-pointer"
+                >
+                  {HOURS_24.map((h) => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Catatan (Opsional):
+              </label>
+              <input
+                type="text"
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                placeholder="Tambahkan catatan jadwal..."
+                className="w-full px-4 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-white/10">
+              <button
+                type="button"
+                onClick={handleDeleteFromEditModal}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 flex items-center space-x-1 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Hapus Jadwal</span>
+              </button>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditScheduleModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-white/10"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-600/30 transition-all active:scale-95"
+                >
+                  Simpan Perubahan
+                </button>
+              </div>
             </div>
           </form>
         </div>
